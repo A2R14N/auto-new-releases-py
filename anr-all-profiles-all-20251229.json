@@ -1,0 +1,1097 @@
+{
+  "version": "2.0",
+  "export_date": "2025-12-29T19:26:26.751367",
+  "app_name": "Auto New Releases",
+  "app_version": "1.0.0",
+  "type": "all",
+  "active_profile_id": "a642ffd3de17",
+  "profile_count": 6,
+  "profiles": [
+    {
+      "id": "a642ffd3de17",
+      "name": "Manele",
+      "artists": [
+        {
+          "uri": "spotify:artist:66Q5nZGMgEDpcjm6Q1ZC64",
+          "name": "Denis Ramniceanu",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb6496000ce31c33d8dc9e56e6",
+          "followers": 86869,
+          "last_follower_update": 1764883116796
+        },
+        {
+          "uri": "spotify:artist:3bxxzWVZpk4rfuuQUESsAy",
+          "name": "Ursaru",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb4599221b88da96975a2bcb47",
+          "followers": 18745,
+          "last_follower_update": 1764883120135
+        },
+        {
+          "uri": "spotify:artist:5d3bc9MSib3NPeIDxYIIWD",
+          "name": "Iuly Neamtu",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb090458adb7f3fe2e632eb78e",
+          "followers": 545426,
+          "last_follower_update": 1764883127419
+        },
+        {
+          "uri": "spotify:artist:5h0wBmd25qPcGSInl3dp66",
+          "name": "Tzanca Uraganu",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebe29fe69aad3a7d12cb3d1b40",
+          "followers": 1702682,
+          "last_follower_update": 1764883138301
+        },
+        {
+          "uri": "spotify:artist:60KR2lVVoYd6GIcfLoUjPI",
+          "name": "Dani Mocanu",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb01bf5a290a9f671a542ebc71",
+          "followers": 1080925,
+          "last_follower_update": 1764883142077
+        },
+        {
+          "uri": "spotify:artist:1XDujSZXKFYhL3lb9HLHHY",
+          "name": "Costel Biju",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb1f18652175ef2edca408c19a",
+          "followers": 679549,
+          "last_follower_update": 1764883148822
+        },
+        {
+          "uri": "spotify:artist:70JR01FS6gztGSDxqtXwDV",
+          "name": "Cocos de la Calarasi",
+          "image": "https://i.scdn.co/image/ab67616d0000b273268174e36f945a79cced9ad5",
+          "followers": 157709,
+          "last_follower_update": 1764883151968
+        },
+        {
+          "uri": "spotify:artist:264Be2Waq137vybMlFYCnu",
+          "name": "Theo Rose",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb9d1f279cb78b36451d1b18db",
+          "followers": 337988,
+          "last_follower_update": 1764883158427
+        },
+        {
+          "uri": "spotify:artist:1vVemTBdqWTcJ0zCc0Oa6G",
+          "name": "Lele",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebb435fffc09bda12971fd963a",
+          "followers": 356496,
+          "last_follower_update": 1764883164594
+        },
+        {
+          "uri": "spotify:artist:2MiJmNQKPgwLZMr35cVqtq",
+          "name": "Bogdan DLP",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebc33139d0d541b66f02eb1f9f",
+          "followers": 832177,
+          "last_follower_update": 1764883170032
+        },
+        {
+          "uri": "spotify:artist:0lD0cnzSrUjThgH9YxBF82",
+          "name": "Luis Gabriel",
+          "image": "https://i.scdn.co/image/ab6761610000e5eba8e2e67deefbe488843ed181",
+          "followers": 350351,
+          "last_follower_update": 1764883174935
+        },
+        {
+          "uri": "spotify:artist:1Iq14y98EVmnXUah4ldJnl",
+          "name": "Babasha",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb5ed0a5f1b7ab03ed56a11a8e",
+          "followers": 415035,
+          "last_follower_update": 1764883179442
+        },
+        {
+          "uri": "spotify:artist:6o6jMpcBBv4jMOEE1Z4tlJ",
+          "name": "Jador",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebb8d4235f36ecab57d8c38227",
+          "followers": 588641,
+          "last_follower_update": 1764883184372
+        },
+        {
+          "uri": "spotify:artist:5GvO1pU9enFaGlqtEbqV2P",
+          "name": "Alberto Guta",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebfb1809670dbce602b9980622",
+          "followers": 31966,
+          "last_follower_update": 1764883202845
+        },
+        {
+          "uri": "spotify:artist:2Roz50myt3fs26y6i2EDq0",
+          "name": "Jamarr",
+          "image": "https://i.scdn.co/image/ab67616d0000b2737b3119005d6ed6983a88865d",
+          "followers": 11891,
+          "last_follower_update": 1764883210667
+        },
+        {
+          "uri": "spotify:artist:049DlsIPXRROSgnc8mJeWd",
+          "name": "Johny Romano",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb6ac117b08cbec1d4bf909f61",
+          "followers": 45773,
+          "last_follower_update": 1764883223413
+        },
+        {
+          "uri": "spotify:artist:0P8GOB6ZytMhZX8fd1OUsz",
+          "name": "Alex Botea",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb81b361d034bb186bbc5ea5b6",
+          "followers": 263537,
+          "last_follower_update": 1764883227605
+        }
+      ],
+      "playlist_uri": "spotify:playlist:7kHR1xj8HBvsnB1n9NMmAR",
+      "playlist_name": "Manele noi 2025",
+      "check_interval": 24,
+      "last_check": 1767027544.051903,
+      "tracked_releases": {},
+      "days_to_check": 0,
+      "sort_by_date": true,
+      "skip_remixes": true,
+      "skip_low_popularity": false,
+      "min_popularity": 30,
+      "skip_long_albums": false,
+      "max_songs": 20,
+      "limit_songs_per_album": true,
+      "max_songs_per_album": 3
+    },
+    {
+      "id": "96e29226168b",
+      "name": "TRAP-RAP",
+      "artists": [
+        {
+          "uri": "spotify:artist:5RqcTk3xp9dW1BLsdQ0NE9",
+          "name": "Aerozen",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb8c71ab7530d7c1a9e7d56283",
+          "followers": 265271,
+          "last_follower_update": 1764885584969
+        },
+        {
+          "uri": "spotify:artist:33CSqdyro89aOFiZb5fU5U",
+          "name": "AlbertNbn",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb0095ebe227edf64b16b27768",
+          "followers": 579862,
+          "last_follower_update": 1764885585162
+        },
+        {
+          "uri": "spotify:artist:03eZ4y8baXNaR68hpkkDoq",
+          "name": "Amuly",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb611bac041de9e9b2a11c4e87",
+          "followers": 168671,
+          "last_follower_update": 1764885585358
+        },
+        {
+          "uri": "spotify:artist:5ysOQVQHHU9GJZBKmZMRHv",
+          "name": "Azteca",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb1501fc761f6a4cbd5ff08569",
+          "followers": 304073,
+          "last_follower_update": 1764885585596
+        },
+        {
+          "uri": "spotify:artist:50vNYJ9Cj5MfsFqGqI7JXQ",
+          "name": "Berechet",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebb2cf85d9726d009b160bbc33",
+          "followers": 161346,
+          "last_follower_update": 1764885585745
+        },
+        {
+          "uri": "spotify:artist:7dRlTYF9B9mfHvYBZAu8os",
+          "name": "BLANCO",
+          "image": "https://i.scdn.co/image/ab67616d0000b273798d51805e3bc2e86d02dca8",
+          "followers": 2,
+          "last_follower_update": 1764885585858
+        },
+        {
+          "uri": "spotify:artist:5CqmNRrmp3UP3NGccmlKHR",
+          "name": "Bvcovia",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebd45a2bc8ab9b94c076cdc30e",
+          "followers": 471303,
+          "last_follower_update": 1764885586022
+        },
+        {
+          "uri": "spotify:artist:01tCOipZP0bkn0LjSZ5S5i",
+          "name": "El Nino",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb6f53acd0f3447667422606fa",
+          "followers": 91093,
+          "last_follower_update": 1764885586151
+        },
+        {
+          "uri": "spotify:artist:0GoJXmDr5UBG8ValCZe4om",
+          "name": "Ian",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb47492162d7134b06f2ec57b1",
+          "followers": 554468,
+          "last_follower_update": 1764885586321
+        },
+        {
+          "uri": "spotify:artist:3uR0BLXGAv5YciM8meWqmO",
+          "name": "LilCagula",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebe4d7bc96c493c6358e909d8c",
+          "followers": 205175,
+          "last_follower_update": 1764885586469
+        },
+        {
+          "uri": "spotify:artist:040gmk9Wd9sKXx199imiSM",
+          "name": "M.G.L.",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb87b737ed99390ac75ecd8dd9",
+          "followers": 260671,
+          "last_follower_update": 1764885586613
+        },
+        {
+          "uri": "spotify:artist:07nCYoPlXkWlhC2FHm1INS",
+          "name": "Marko Glass",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb9649ff5ad80e4670536f30de",
+          "followers": 300336,
+          "last_follower_update": 1764885586868
+        },
+        {
+          "uri": "spotify:artist:6yTJ8tQyoUxgf6aqbpsXhQ",
+          "name": "Mgk666",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb22c78cbc4acdbf7809956066",
+          "followers": 643048,
+          "last_follower_update": 1764885587103
+        },
+        {
+          "uri": "spotify:artist:1fYKCWegShlSGe4yATnpdp",
+          "name": "NOUA UNSPE",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb2bce594ef504c8e545cec63c",
+          "followers": 100033,
+          "last_follower_update": 1764885587251
+        },
+        {
+          "uri": "spotify:artist:754BJcKdHZH7tj9xFq3hHO",
+          "name": "OG Eastbull",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb4e9e9cac740aa1ca59679ca9",
+          "followers": 115831,
+          "last_follower_update": 1764885587396
+        },
+        {
+          "uri": "spotify:artist:6dKPNkSEQOrRRvZz63Y47F",
+          "name": "Oscar",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb2e02ff69613849e075494d35",
+          "followers": 421004,
+          "last_follower_update": 1764885587539
+        },
+        {
+          "uri": "spotify:artist:0yjc2FN5zju7xyuJsTfGkh",
+          "name": "Petre Stefan",
+          "image": "https://i.scdn.co/image/ab6761610000e5eba6e075b7b5c24b9a85b44b14",
+          "followers": 299133,
+          "last_follower_update": 1764885587659
+        },
+        {
+          "uri": "spotify:artist:6ocuMBOl5OFS3AViv3DnG6",
+          "name": "RAVA",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebb3191cec6a600aa0f4846211",
+          "followers": 614174,
+          "last_follower_update": 1764885587760
+        },
+        {
+          "uri": "spotify:artist:7uERYbuFqxJTqQlQr52lZr",
+          "name": "Sami G",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb1fd82bb5a22c78be911b4e9d",
+          "followers": 163545,
+          "last_follower_update": 1764885587969
+        },
+        {
+          "uri": "spotify:artist:3ZxemCGQmRuqoBPhQP5Gut",
+          "name": "Satra B.E.N.Z.",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebe5d54299c95e16744b15b3a7",
+          "followers": 109571,
+          "last_follower_update": 1764885588005
+        },
+        {
+          "uri": "spotify:artist:5BUJV1dbGNb61hYPK6rhtM",
+          "name": "YNY Sebi",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb669e026dfe159baa9940098e",
+          "followers": 567419,
+          "last_follower_update": 1764885588074
+        },
+        {
+          "uri": "spotify:artist:0cA9DRt344kHIuWkY87dEk",
+          "name": "PRNY",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebd3735fb892bd5c20c8135160",
+          "followers": 51456,
+          "last_follower_update": 1764885601966
+        }
+      ],
+      "playlist_uri": "spotify:playlist:2KvY57YW8MUoj2CFS5IYAl",
+      "playlist_name": "Trap-Rap 2025",
+      "check_interval": 24,
+      "last_check": 1767027047.1050465,
+      "tracked_releases": {},
+      "days_to_check": 30,
+      "sort_by_date": true,
+      "skip_remixes": true,
+      "skip_low_popularity": false,
+      "min_popularity": 30,
+      "skip_long_albums": false,
+      "max_songs": 20,
+      "limit_songs_per_album": false,
+      "max_songs_per_album": 5
+    },
+    {
+      "id": "e29212c16ee2",
+      "name": "POP RO",
+      "artists": [
+        {
+          "uri": "spotify:artist:1lYjAYTw1QBVxIwVrZ1eTy",
+          "name": "ADDA",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebc72e870e41b13d7643000751",
+          "followers": 219400,
+          "last_follower_update": 1764886688757
+        },
+        {
+          "uri": "spotify:artist:1V4elwsLx3Lz43ma61eySA",
+          "name": "Alex Velea",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb6a14d16698aeb3e47a99126f",
+          "followers": 267651,
+          "last_follower_update": 1764886688865
+        },
+        {
+          "uri": "spotify:artist:0BmLNz4nSLfoWYW1cYsElL",
+          "name": "Alexandra Stan",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb4469592b9a24ea17d3f47f00",
+          "followers": 437366,
+          "last_follower_update": 1764886688943
+        },
+        {
+          "uri": "spotify:artist:6cpj6MeLF0pLx34Un9Bpj3",
+          "name": "Alina Eremia",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb1e62bbb925a738de17012860",
+          "followers": 263727,
+          "last_follower_update": 1764886689071
+        },
+        {
+          "uri": "spotify:artist:4yjYHvJbZFQ7sESuV9t3uQ",
+          "name": "Amna",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb3e38454995d1736a1cb0b779",
+          "followers": 73579,
+          "last_follower_update": 1764886689136
+        },
+        {
+          "uri": "spotify:artist:5Xf9tWz0AarRXKqKKxJkNE",
+          "name": "Anda Adam",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb99c37f60b18f9da5b8c9b45a",
+          "followers": 53474,
+          "last_follower_update": 1764886689315
+        },
+        {
+          "uri": "spotify:artist:6Jwwt3X2qSFanYwEHcvBkn",
+          "name": "Andia",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebd6ae3dea4c4db5d3583fb7aa",
+          "followers": 173019,
+          "last_follower_update": 1764886689602
+        },
+        {
+          "uri": "spotify:artist:72FGvJgYbs0NBeJqECy6cF",
+          "name": "Andra",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb2a06088db3d2dc04760ef7ea",
+          "followers": 300421,
+          "last_follower_update": 1764886689749
+        },
+        {
+          "uri": "spotify:artist:0EzdKL71gSNlSxnAmEQeGV",
+          "name": "Andreea Balan",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb3074805417dd0ae628920ba0",
+          "followers": 80487,
+          "last_follower_update": 1764886689868
+        },
+        {
+          "uri": "spotify:artist:1MRQV5l5n4ax84U6CQljVq",
+          "name": "Andreea Banica",
+          "image": "https://i.scdn.co/image/ab67616d0000b27334866e61dc5c8c9b9d1fba92",
+          "followers": 66577,
+          "last_follower_update": 1764886690070
+        },
+        {
+          "uri": "spotify:artist:4TLzMoEaUDkcAfIlY3Xhxn",
+          "name": "Antonia",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb1551da825ed9b917cc856d8e",
+          "followers": 142699,
+          "last_follower_update": 1764886690234
+        },
+        {
+          "uri": "spotify:artist:0cw3wLz2S9ryZXmL0vWWQF",
+          "name": "Cabron",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebb5e1f40b2d0b3a28ca8fd056",
+          "followers": 73419,
+          "last_follower_update": 1764886690459
+        },
+        {
+          "uri": "spotify:artist:1n5LD9Ar3D6RK2X2ewGvXb",
+          "name": "Carla's Dreams",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebb4c7b3f5810d620137969cdb",
+          "followers": 552134,
+          "last_follower_update": 1764886690537
+        },
+        {
+          "uri": "spotify:artist:1omKDrKCcMD79tfK8Vb2Hr",
+          "name": "Connect-R",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb31e718ffc286e2b4e2877e16",
+          "followers": 264500,
+          "last_follower_update": 1764886690778
+        },
+        {
+          "uri": "spotify:artist:1CIFZBDYwomNEdnBJUnIZD",
+          "name": "Corina",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb2f8d8404206a2a2d11eef97c",
+          "followers": 39180,
+          "last_follower_update": 1764886690946
+        },
+        {
+          "uri": "spotify:artist:6YomcUxZXNftP5OyuHoVmB",
+          "name": "Delia",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb0026f54f05bfb073a8438322",
+          "followers": 463834,
+          "last_follower_update": 1764886691046
+        },
+        {
+          "uri": "spotify:artist:7qY3EcnVR7pBXBzaHi3bYo",
+          "name": "Dorian Popa",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb86c0a5f9bbb16efc41a05b5b",
+          "followers": 171358,
+          "last_follower_update": 1764886691157
+        },
+        {
+          "uri": "spotify:artist:5ckrQzJjIPDPS6EM4V1nmX",
+          "name": "Feli",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb0cdc9cb37ca6f0adf5736250",
+          "followers": 229773,
+          "last_follower_update": 1764886691237
+        },
+        {
+          "uri": "spotify:artist:1OQa8VMULlbmbFmDcdfBZj",
+          "name": "Irina Rimes",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebd5714a6e4ff1ac42fd29b785",
+          "followers": 813747,
+          "last_follower_update": 1764886691350
+        },
+        {
+          "uri": "spotify:artist:69JOH9w7UtJrKnbUpcW2gH",
+          "name": "Lidia Buble",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb036b98185c9abbdeb64f9ef0",
+          "followers": 226102,
+          "last_follower_update": 1764886691465
+        },
+        {
+          "uri": "spotify:artist:1ht25I3tgkphYm1HI7wMDq",
+          "name": "Lora",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb303e3561862b223d7d2c7b09",
+          "followers": 120711,
+          "last_follower_update": 1764886691530
+        },
+        {
+          "uri": "spotify:artist:5aU8qm9nbrIaXO8ieyKlTa",
+          "name": "Loredana",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebdd5e16bf4d55bb75dbbc55b7",
+          "followers": 42019,
+          "last_follower_update": 1764886691747
+        },
+        {
+          "uri": "spotify:artist:2nMFC7hWK0haX8ilvRpb59",
+          "name": "MIRA",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebffab95905749bb718d413b9f",
+          "followers": 215521,
+          "last_follower_update": 1764886691747
+        },
+        {
+          "uri": "spotify:artist:6rgOaYJps51uMmUyzm5fi7",
+          "name": "Nicole Cherry",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebc7b9684c5ad5bc69e330365e",
+          "followers": 335916,
+          "last_follower_update": 1764886691747
+        },
+        {
+          "uri": "spotify:artist:6RQDTlies3nrNDJwXvbBZT",
+          "name": "Otilia",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb1c81fe3a4d4ad7ce968d1349",
+          "followers": 268735,
+          "last_follower_update": 1764886691747
+        },
+        {
+          "uri": "spotify:artist:0Dn3AfYwq9cWRhDqtfelNE",
+          "name": "Puya",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb769faf7c8282fbf5aceacfac",
+          "followers": 302214,
+          "last_follower_update": 1764886691747
+        },
+        {
+          "uri": "spotify:artist:6Lovpq3UamSOdAbcQAqbz9",
+          "name": "rares",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb20ef18eca215a17ee7fc7e2a",
+          "followers": 118098,
+          "last_follower_update": 1764886691747
+        },
+        {
+          "uri": "spotify:artist:3gvNMbcnvmnjGaG6hvJfSH",
+          "name": "Smiley",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebcf9b3d18027745226f6a5334",
+          "followers": 634827,
+          "last_follower_update": 1764886691747
+        },
+        {
+          "uri": "spotify:artist:05qpk4JDcLSFNJSsPIZ8Ye",
+          "name": "The Motans",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebdbe3b95bf72c04d0669e0eb1",
+          "followers": 489044,
+          "last_follower_update": 1764886691747
+        }
+      ],
+      "playlist_uri": "spotify:playlist:34IKxGXgIY6LFUfQlDx3iG",
+      "playlist_name": "POP 2025",
+      "check_interval": 24,
+      "last_check": 1767027081.3860507,
+      "tracked_releases": {},
+      "days_to_check": 30,
+      "sort_by_date": true,
+      "skip_remixes": true,
+      "skip_low_popularity": false,
+      "min_popularity": 30,
+      "skip_long_albums": false,
+      "max_songs": 20,
+      "limit_songs_per_album": false,
+      "max_songs_per_album": 5
+    },
+    {
+      "id": "aa1552caa011",
+      "name": "TRAP RAP US",
+      "artists": [
+        {
+          "uri": "spotify:artist:4xPQFgDA5M2xa0ZGo5iIsv",
+          "name": "¥$",
+          "image": "https://i.scdn.co/image/ab6761610000e5eba670555775b5381ac0519658",
+          "followers": 1050487,
+          "last_follower_update": 1764887421633
+        },
+        {
+          "uri": "spotify:artist:1URnnhqYAYcrqrcwql10ft",
+          "name": "21 Savage",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb4f8f76117470957c0e81e5b2",
+          "followers": 24117827,
+          "last_follower_update": 1764887421824
+        },
+        {
+          "uri": "spotify:artist:3q7HBObVc0L8jNeTe5Gofh",
+          "name": "50 Cent",
+          "image": "https://i.scdn.co/image/dd031b9c5d1b6eba4a691cd89c954255aae787f2",
+          "followers": 19191929,
+          "last_follower_update": 1764887421943
+        },
+        {
+          "uri": "spotify:artist:5dHt1vcEm9qb8fCyLcB3HL",
+          "name": "A$AP Ferg",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb11b1fd4dfaa772c272ac98ec",
+          "followers": 4317588,
+          "last_follower_update": 1764887422064
+        },
+        {
+          "uri": "spotify:artist:4kYSro6naA4h99UJvo89HB",
+          "name": "Cardi B",
+          "image": "https://i.scdn.co/image/ab6761610000e5eba23286f24edd4a7dbdc6311d",
+          "followers": 26077390,
+          "last_follower_update": 1764887422395
+        },
+        {
+          "uri": "spotify:artist:5H4yInM5zmHqpKIoMNAx4r",
+          "name": "Central Cee",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebf6469f2cbf0a7e78744a3173",
+          "followers": 9891538,
+          "last_follower_update": 1764887422695
+        },
+        {
+          "uri": "spotify:artist:15iVAtD3s3FsQR4w1v6M0P",
+          "name": "Chief Keef",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebf3d48b48b4603bd55f489655",
+          "followers": 5794462,
+          "last_follower_update": 1764887422813
+        },
+        {
+          "uri": "spotify:artist:4r63FhuTkUYltbVAg5TQnk",
+          "name": "DaBaby",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebbd6918901c1714560669f570",
+          "followers": 13026964,
+          "last_follower_update": 1764887422929
+        },
+        {
+          "uri": "spotify:artist:5cj0lLjcoR7YOSnhnX0Po5",
+          "name": "Doja Cat",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb8a0644455ebfa7d3976f5101",
+          "followers": 35131962,
+          "last_follower_update": 1764887423071
+        },
+        {
+          "uri": "spotify:artist:6DPYiyq5kWVQS4RGwxzPC7",
+          "name": "Dr. Dre",
+          "image": "https://i.scdn.co/image/83d2489cade1dadcdc533ddbcd74993d0ca6d4cb",
+          "followers": 15263899,
+          "last_follower_update": 1764887423298
+        },
+        {
+          "uri": "spotify:artist:3TVXtAsR1Inumwj472S9r4",
+          "name": "Drake",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb4293385d324db8558179afd9",
+          "followers": 104262633,
+          "last_follower_update": 1764887423391
+        },
+        {
+          "uri": "spotify:artist:7dGJo4pcD2V6oG8kP0tJRR",
+          "name": "Eminem",
+          "image": "https://i.scdn.co/image/ab6761610000e5eba00b11c129b27a88fc72f36b",
+          "followers": 105406637,
+          "last_follower_update": 1764887423558
+        },
+        {
+          "uri": "spotify:artist:6vXTefBL93Dj5IqAWq6OTv",
+          "name": "French Montana",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebadb2f8e09c3e3171956aafe4",
+          "followers": 5880214,
+          "last_follower_update": 1764887423680
+        },
+        {
+          "uri": "spotify:artist:1RyvyyTE3xzB2ZywiAwp0i",
+          "name": "Future",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb7565b356bc9d9394eefa2ccb",
+          "followers": 22956753,
+          "last_follower_update": 1764887423823
+        },
+        {
+          "uri": "spotify:artist:2qoQgPAilErOKCwE2Y8wOG",
+          "name": "GloRilla",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebc33cf3ad025517202d8efbc0",
+          "followers": 2625337,
+          "last_follower_update": 1764887423921
+        },
+        {
+          "uri": "spotify:artist:3LZZPxNDGDFVSIPqf4JuEf",
+          "name": "Ice Spice",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb99878733414d6d04a20a5c3e",
+          "followers": 4865654,
+          "last_follower_update": 1764887424071
+        },
+        {
+          "uri": "spotify:artist:4MCBfE4596Uoi2O4DtmEMz",
+          "name": "Juice WRLD",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb23a60030944f7853c21565ef",
+          "followers": 43019334,
+          "last_follower_update": 1764887424167
+        },
+        {
+          "uri": "spotify:artist:5K4W6rqBFWDnAN6FQUkS6x",
+          "name": "Kanye West",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb6e835a500e791bf9c27a422a",
+          "followers": 31343501,
+          "last_follower_update": 1764887424358
+        },
+        {
+          "uri": "spotify:artist:3gBZUcNeVumkeeJ19CY2sX",
+          "name": "Ken Carson",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb95ccca370d8bd50e84c222bc",
+          "followers": 3230918,
+          "last_follower_update": 1764887424438
+        },
+        {
+          "uri": "spotify:artist:2YZyLoL8N0Wb9xBt1NhZWg",
+          "name": "Kendrick Lamar",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb39ba6dcd4355c03de0b50918",
+          "followers": 45157948,
+          "last_follower_update": 1764887424859
+        },
+        {
+          "uri": "spotify:artist:0fA0VVWsXO9YnASrzqfmYu",
+          "name": "Kid Cudi",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb5f00bb6dd7a7008d14156630",
+          "followers": 7758806,
+          "last_follower_update": 1764887424937
+        },
+        {
+          "uri": "spotify:artist:6QtgPSJPSzcnn7dPZ4VINp",
+          "name": "King Von",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb5c0b2129a88c7d6ed0704556",
+          "followers": 8132126,
+          "last_follower_update": 1764887425026
+        },
+        {
+          "uri": "spotify:artist:5f7VJjfbwm532GiveGC0ZK",
+          "name": "Lil Baby",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb514da623c55dc9d2155705dd",
+          "followers": 21890697,
+          "last_follower_update": 1764887425105
+        },
+        {
+          "uri": "spotify:artist:4Ga1P7PMIsmqEZqhYZQgDo",
+          "name": "Lil Tecca",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb5433d9d8519ad0635d8bd869",
+          "followers": 10287940,
+          "last_follower_update": 1764887425239
+        },
+        {
+          "uri": "spotify:artist:6jGMq4yGs7aQzuGsMgVgZR",
+          "name": "Lil Tjay",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb61a229ac35bdd68d42bffe32",
+          "followers": 10284459,
+          "last_follower_update": 1764887425334
+        },
+        {
+          "uri": "spotify:artist:4O15NlyKLIASxsJ0PrXPfz",
+          "name": "Lil Uzi Vert",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb62c272d76220f2e9dad56704",
+          "followers": 19398640,
+          "last_follower_update": 1764887425412
+        },
+        {
+          "uri": "spotify:artist:55Aa2cqylxrFIXC767Z865",
+          "name": "Lil Wayne",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb998010cd1075921b5faf16b2",
+          "followers": 18164177,
+          "last_follower_update": 1764887425602
+        },
+        {
+          "uri": "spotify:artist:0hCNtLu0JehylgoiP8L4Gh",
+          "name": "Nicki Minaj",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb07a50f0a9a8f11e5a1102cbd",
+          "followers": 34409492,
+          "last_follower_update": 1764887425683
+        },
+        {
+          "uri": "spotify:artist:0ErzCpIMyLcjPiwT4elrtZ",
+          "name": "NLE Choppa",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebe2c985e8509fc8788a5a5208",
+          "followers": 10117318,
+          "last_follower_update": 1764887425979
+        },
+        {
+          "uri": "spotify:artist:699OTQXzgjhIYAHMy9RyPD",
+          "name": "Playboi Carti",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebba50ca67ffc3097f6ea1710a",
+          "followers": 15238526,
+          "last_follower_update": 1764887426688
+        },
+        {
+          "uri": "spotify:artist:6AgTAQt8XS6jRWi4sX7w49",
+          "name": "Polo G",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebbedf3bdf589da06d1567196c",
+          "followers": 13175729,
+          "last_follower_update": 1764887426760
+        },
+        {
+          "uri": "spotify:artist:0eDvMgVFoNV3TpwtrVCoTj",
+          "name": "Pop Smoke",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb597f9edd2cd1a892d4412b09",
+          "followers": 15694194,
+          "last_follower_update": 1764887426886
+        },
+        {
+          "uri": "spotify:artist:3DbwFQlvLxRSi2uX8mf81A",
+          "name": "Sexyy Red",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebd341871daa2c688ea24dcf02",
+          "followers": 2359362,
+          "last_follower_update": 1764887426981
+        },
+        {
+          "uri": "spotify:artist:7hJcb9fa4alzcOq3EaNPoG",
+          "name": "Snoop Dogg",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebc19a88576ebe6fcbb325c297",
+          "followers": 15918531,
+          "last_follower_update": 1764887427135
+        },
+        {
+          "uri": "spotify:artist:3aQeKQSyrW4qWr35idm0cy",
+          "name": "T-Pain",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb173c878a651babb8d0db4cee",
+          "followers": 5904554,
+          "last_follower_update": 1764887427222
+        },
+        {
+          "uri": "spotify:artist:1Xyo4u8uXC1ZmMpatF05PJ",
+          "name": "The Weeknd",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb9e528993a2820267b97f6aae",
+          "followers": 114640705,
+          "last_follower_update": 1764887427223
+        },
+        {
+          "uri": "spotify:artist:0Y5tJX1MQlPlqiwlOH1tJY",
+          "name": "Travis Scott",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb19c2790744c792d05570bb71",
+          "followers": 41594849,
+          "last_follower_update": 1764887427223
+        },
+        {
+          "uri": "spotify:artist:6Xgp2XMz1fhVYe7i6yNAax",
+          "name": "Trippie Redd",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebf2db81b3312a1f167fc54096",
+          "followers": 11133088,
+          "last_follower_update": 1764887427223
+        },
+        {
+          "uri": "spotify:artist:7c0XG5cIJTrrAgEC3ULPiq",
+          "name": "Ty Dolla $ign",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebdeccf223fe80d308aba91b64",
+          "followers": 7417890,
+          "last_follower_update": 1764887427223
+        },
+        {
+          "uri": "spotify:artist:5LHRHt1k9lMyONurDHEdrp",
+          "name": "Tyga",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebc0aa5c92c47f7e766074edce",
+          "followers": 7357603,
+          "last_follower_update": 1764887427627
+        },
+        {
+          "uri": "spotify:artist:23zg3TcAtWQy7J6upgbUnj",
+          "name": "USHER",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb716114797a4a644c67c5fa72",
+          "followers": 13912343,
+          "last_follower_update": 1764887427627
+        },
+        {
+          "uri": "spotify:artist:137W8MRPWKqSmrBGDBFSop",
+          "name": "Wiz Khalifa",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebc66b0a8c3268f0b6556f64a8",
+          "followers": 12148041,
+          "last_follower_update": 1764887427628
+        },
+        {
+          "uri": "spotify:artist:3NlsBPwqJuDgtXZ2rv5Dmq",
+          "name": "Ye",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb763ebf2c9db1346288731802",
+          "followers": 419730,
+          "last_follower_update": 1764887427628
+        },
+        {
+          "uri": "spotify:artist:3qiHUAX7zY4Qnjx8TNUzVx",
+          "name": "Yeat",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebbcb7b5ea25215172d09d4e2e",
+          "followers": 6060489,
+          "last_follower_update": 1764887427628
+        },
+        {
+          "uri": "spotify:artist:50co4Is1HCEo8bhOyUWKpn",
+          "name": "Young Thug",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb9f2fb33940aac624dc5d100d",
+          "followers": 12540409,
+          "last_follower_update": 1764887427628
+        },
+        {
+          "uri": "spotify:artist:246dkjvS1zLTtiykXe5h60",
+          "name": "Post Malone",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebe17c0aa1714a03d62b5ce4e0",
+          "followers": 47872661,
+          "last_follower_update": 1764887477547
+        },
+        {
+          "uri": "spotify:artist:6qxpnaukVayrQn6ViNvu9I",
+          "name": "BigXthaPlug",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebbc8b0b51c651063f787330c5",
+          "followers": 2146515,
+          "last_follower_update": 1764887486405
+        },
+        {
+          "uri": "spotify:artist:4V8LLVI7PbaPR0K2TGSxFF",
+          "name": "Tyler, The Creator",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebdf2728294ff77dd11eeb18fb",
+          "followers": 24854830,
+          "last_follower_update": 1764887497487
+        }
+      ],
+      "playlist_uri": "spotify:playlist:53cUGtKSAR5XbBrNHW9Q89",
+      "playlist_name": "HIP-HOP - RAP - Trap 2025",
+      "check_interval": 24,
+      "last_check": 1767027143.6894515,
+      "tracked_releases": {},
+      "days_to_check": 30,
+      "sort_by_date": true,
+      "skip_remixes": true,
+      "skip_low_popularity": false,
+      "min_popularity": 30,
+      "skip_long_albums": false,
+      "max_songs": 20,
+      "limit_songs_per_album": false,
+      "max_songs_per_album": 5
+    },
+    {
+      "id": "837be4364f4a",
+      "name": "HIP-HOP",
+      "artists": [
+        {
+          "uri": "spotify:artist:4RAbHb0oHO62If4S7h18L0",
+          "name": "B.U.G. Mafia",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebfe8e1cb01db210df80a766f4",
+          "followers": 660058,
+          "last_follower_update": 1764891229299
+        },
+        {
+          "uri": "spotify:artist:38D4CP96Q3tn48qOGA6wbZ",
+          "name": "Bitza",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb8aecd869696af359b7ba59bc",
+          "followers": 110365,
+          "last_follower_update": 1764891229299
+        },
+        {
+          "uri": "spotify:artist:6JK8YGmVPJR1FM7P9BSQtE",
+          "name": "Cheloo",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb490ebb4ec950cd52c9a22215",
+          "followers": 221667,
+          "last_follower_update": 1764891229299
+        },
+        {
+          "uri": "spotify:artist:357du2352LkLWerYcY49WY",
+          "name": "Deliric",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebae06a14381169eab88397c19",
+          "followers": 94986,
+          "last_follower_update": 1764891229299
+        },
+        {
+          "uri": "spotify:artist:6pWa7vRheyK4dmNJ2cg0gA",
+          "name": "DOC",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb4364db3d890636533c4c9f73",
+          "followers": 52075,
+          "last_follower_update": 1764891229299
+        },
+        {
+          "uri": "spotify:artist:01tCOipZP0bkn0LjSZ5S5i",
+          "name": "El Nino",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb6f53acd0f3447667422606fa",
+          "followers": 91093,
+          "last_follower_update": 1764891229299
+        },
+        {
+          "uri": "spotify:artist:6It6CRXoG3Td3sglLkIaCl",
+          "name": "Kazi Ploae",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebca17b12b323481baf18d8e75",
+          "followers": 53726,
+          "last_follower_update": 1764891229315
+        },
+        {
+          "uri": "spotify:artist:0MBEd6qd0GmDdDW8Pyftuv",
+          "name": "La Familia",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb2afceaf9fac602ce8e5f5dac",
+          "followers": 151437,
+          "last_follower_update": 1764891229315
+        },
+        {
+          "uri": "spotify:artist:54EYCPv2Q9BztPlmWqiHKP",
+          "name": "Mutu",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebc0520e68f28a88e635984f1b",
+          "followers": 2547,
+          "last_follower_update": 1764891229315
+        },
+        {
+          "uri": "spotify:artist:2YcYwR7Mb2BrPqBq7fd2fL",
+          "name": "Nimeni Altu’",
+          "image": "https://i.scdn.co/image/ab67616d0000b2739f37d6885d13f5435dd88af1",
+          "followers": 67331,
+          "last_follower_update": 1764891229315
+        },
+        {
+          "uri": "spotify:artist:6ojVBJkxhgSj5zgXsM3hnF",
+          "name": "Ombladon",
+          "image": "https://i.scdn.co/image/ab67616d0000b273b1170ffcd9b11b929899a2af",
+          "followers": 180640,
+          "last_follower_update": 1764891229315
+        },
+        {
+          "uri": "spotify:artist:0PdWFfvPIWXWVJGTfsfIhc",
+          "name": "Ortega",
+          "image": "https://i.scdn.co/image/ab67616d0000b273ca03af7a7bca3abc8565e1f8",
+          "followers": 3968,
+          "last_follower_update": 1764891229448
+        },
+        {
+          "uri": "spotify:artist:4u0tMvazRUSOlvjqzhyLqF",
+          "name": "Parazitii",
+          "image": "https://i.scdn.co/image/ab67616d0000b273471a94dc422b8455672660f2",
+          "followers": 407920,
+          "last_follower_update": 1764891229448
+        },
+        {
+          "uri": "spotify:artist:2uY1K2tEdWUdDiK6tzBwwo",
+          "name": "Phunk B",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb0eb6e52c4e5bc110b07d0c16",
+          "followers": 39953,
+          "last_follower_update": 1764891229448
+        },
+        {
+          "uri": "spotify:artist:0bypMpAgjSZJaThtP1oqFV",
+          "name": "Vlad Dobrescu",
+          "image": "https://i.scdn.co/image/ab67616d0000b273777944d7b1fc348bebf84663",
+          "followers": 49474,
+          "last_follower_update": 1764891229449
+        },
+        {
+          "uri": "spotify:artist:4BMSu3GY2lP8sH0nmrdgGG",
+          "name": "Grasu XXL",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebbe004a999e122b55927eb78d",
+          "followers": 223405,
+          "last_follower_update": 1764891256086
+        },
+        {
+          "uri": "spotify:artist:2CIhA8Jh3xrpFrHYMjYzBy",
+          "name": "Guess Who",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb35be14aabe861b8b597e2a78",
+          "followers": 134051,
+          "last_follower_update": 1764891285716
+        },
+        {
+          "uri": "spotify:artist:3FtEcOKSEewVDkg0pYdyym",
+          "name": "Zale",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb34ee55811e232a397efd89ea",
+          "followers": 24632,
+          "last_follower_update": 1764891293309
+        },
+        {
+          "uri": "spotify:artist:46aXN6WkLiqK8bJGXzzpVR",
+          "name": "Anonim",
+          "image": "https://i.scdn.co/image/ab67616d0000b273343ca2be49ace7180c3b81c0",
+          "followers": 34026,
+          "last_follower_update": 1764891298248
+        },
+        {
+          "uri": "spotify:artist:3HQILgHFjHczbYP02G1NIP",
+          "name": "CTC",
+          "image": "https://i.scdn.co/image/ab6761610000e5eb179aab628e7ac250f535e2c9",
+          "followers": 8314,
+          "last_follower_update": 1764891310105
+        },
+        {
+          "uri": "spotify:artist:2maZfxC0gHjyTWEqo78VTV",
+          "name": "Bocaseca",
+          "image": "https://i.scdn.co/image/ab67616d0000b273cfd213f9c12caa06aeed0e1b",
+          "followers": 13002,
+          "last_follower_update": 1764891333212
+        }
+      ],
+      "playlist_uri": "spotify:playlist:7HMM4u3ZTYbGuUW3AEPI89",
+      "playlist_name": "Hip-hop 2025",
+      "check_interval": 24,
+      "last_check": 1767027161.520245,
+      "tracked_releases": {},
+      "days_to_check": 30,
+      "sort_by_date": true,
+      "skip_remixes": false,
+      "skip_low_popularity": false,
+      "min_popularity": 30,
+      "skip_long_albums": false,
+      "max_songs": 20,
+      "limit_songs_per_album": false,
+      "max_songs_per_album": 5
+    },
+    {
+      "id": "cdb88036aff4",
+      "name": "BUG MAFIA",
+      "artists": [
+        {
+          "uri": "spotify:artist:4RAbHb0oHO62If4S7h18L0",
+          "name": "B.U.G. Mafia",
+          "image": "https://i.scdn.co/image/ab6761610000e5ebfe8e1cb01db210df80a766f4",
+          "followers": 663936,
+          "last_follower_update": 1766311864423
+        }
+      ],
+      "playlist_uri": "spotify:playlist:22z9TuVSHj8No8ifPbOPxF",
+      "playlist_name": "B.U.G. MAFIA",
+      "check_interval": 24,
+      "last_check": 1767027164.5659943,
+      "tracked_releases": {},
+      "days_to_check": 30,
+      "sort_by_date": true,
+      "skip_remixes": false,
+      "skip_low_popularity": false,
+      "min_popularity": 30,
+      "skip_long_albums": false,
+      "max_songs": 20,
+      "limit_songs_per_album": false,
+      "max_songs_per_album": 5
+    }
+  ]
+}
