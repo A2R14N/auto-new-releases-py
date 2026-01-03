@@ -1756,6 +1756,52 @@ class SpotifyAPI:
                 self._handle_api_error(e, "Get audio features")
         
         return [f for f in results if f]
+
+    # ============================================
+    # PLAYLIST TRACK REMOVAL
+    # ============================================
+    
+    def remove_playlist_tracks(self, playlist_id: str, track_uris: List[str]) -> bool:
+        """
+        Remove tracks from a playlist.
+        
+        Args:
+            playlist_id: Playlist ID (not URI)
+            track_uris: List of track URI strings
+            
+        Returns:
+            True if successful
+        """
+        if not track_uris:
+            return True
+        
+        # Format tracks for API - must be list of {"uri": "..."} objects
+        tracks = []
+        for uri in track_uris:
+            # Ensure uri is a string
+            if isinstance(uri, dict):
+                uri_str = uri.get('uri', '')
+            elif isinstance(uri, str):
+                uri_str = uri
+            else:
+                continue
+            
+            if uri_str:
+                tracks.append({"uri": uri_str})
+        
+        if not tracks:
+            return True
+        
+        try:
+            self._rate_limit()
+            self.client.playlist_remove_all_occurrences_of_items(
+                playlist_id,
+                [t["uri"] for t in tracks]
+            )
+            return True
+        except Exception as e:
+            self._handle_api_error(e, f"Remove tracks from playlist {playlist_id}")
+            return False
     
     # ============================================
     # PLAYLIST OPERATIONS (Basic - more in Part 4)
@@ -2481,49 +2527,65 @@ class PlaylistOperations:
         progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> Tuple[int, int]:
         """
-        Remove tracks from a playlist in batches.
-        
+        Remove tracks from a playlist.
+
         Args:
-            playlist_uri: Playlist URI/ID
-            track_uris: List of track URIs to remove
+            playlist_uri: Playlist URI
+            track_uris: List of track URIs (strings) to remove
             progress_callback: Optional callback(current, total)
-            
+
         Returns:
             Tuple of (removed_count, failed_count)
         """
         playlist_id = parse_spotify_uri(playlist_uri, "playlist")
-        if not playlist_id or not track_uris:
-            return (0, 0)
-        
+        if not playlist_id:
+            return 0, len(track_uris)
+
+        # Ensure all URIs are strings, not dicts
+        clean_uris = []
+        for uri in track_uris:
+            if isinstance(uri, dict):
+                # Handle if uri is a dict with 'uri' key
+                clean_uri = uri.get('uri', '')
+            elif isinstance(uri, str):
+                clean_uri = uri
+            else:
+                # Skip invalid types
+                continue
+
+            if clean_uri and clean_uri.startswith('spotify:track:'):
+                clean_uris.append(clean_uri)
+
+        if not clean_uris:
+            return 0, len(track_uris)
+
         removed = 0
         failed = 0
-        batch_size = API_LIMITS["PLAYLIST_BATCH_SIZE"]
-        total = len(track_uris)
-        
-        # Format tracks for removal
+        total = len(clean_uris)
+
+        # Process in batches of 100 (Spotify limit)
+        batch_size = 100
+
         for i in range(0, total, batch_size):
-            batch = track_uris[i:i + batch_size]
-            tracks_to_remove = [{"uri": uri} for uri in batch]
-            
+            batch = clean_uris[i:i + batch_size]
+
+            if progress_callback:
+                progress_callback(i, total)
+
             try:
-                self.api._rate_limit()
-                self.client.playlist_remove_all_occurrences_of_items(
-                    playlist_id,
-                    tracks_to_remove
-                )
-                removed += len(batch)
-                
+                success = self.api.remove_playlist_tracks(playlist_id, batch)
+                if success:
+                    removed += len(batch)
+                else:
+                    failed += len(batch)
             except Exception as e:
                 print_error(f"Failed to remove batch: {e}")
                 failed += len(batch)
-            
-            if progress_callback:
-                progress_callback(removed + failed, total)
-        
-        # Clear playlist cache
-        self.api.clear_cache(f"playlist:{playlist_id}")
-        
-        return (removed, failed)
+
+        if progress_callback:
+            progress_callback(total, total)
+
+        return removed, failed
     
     def remove_tracks_by_artist(
         self,
@@ -5545,7 +5607,7 @@ class PlaylistSorter:
 # ============================================
 
 class PlaylistDeduplicator:
-    """Handles playlist deduplication."""
+    """Handles playlist deduplication with combined preview and remove."""
     
     def __init__(self, spotify_api: SpotifyAPI, playlist_ops: PlaylistOperations):
         self.api = spotify_api
@@ -5583,41 +5645,128 @@ class PlaylistDeduplicator:
         
         return duplicates, tracks
     
-    def preview_duplicates(
+    def interactive_dedupe(
         self,
         playlist_uri: str,
-        include_similar: bool = False
-    ) -> List[DuplicateInfo]:
+        include_similar: bool = False,
+        create_backup: bool = True
+    ) -> DedupeResult:
         """
-        Preview duplicates without removing them.
+        Interactive deduplication: preview duplicates, then optionally remove.
         
         Args:
             playlist_uri: Playlist URI
             include_similar: Include similar matches
+            create_backup: Whether to create backup before removing
             
         Returns:
-            List of duplicates found
+            DedupeResult
         """
-        print_info("Scanning playlist for duplicates...")
+        start_time = time.time()
+        result = DedupeResult(
+            success=True,
+            duplicates_found=0,
+            duplicates_removed=0,
+            exact_duplicates=0,
+            similar_duplicates=0
+        )
         
-        duplicates, tracks = self.find_duplicates(playlist_uri, include_similar)
+        # Get playlist details
+        playlist = self.ops.get_playlist_details(playlist_uri)
+        if not playlist:
+            result.success = False
+            result.error_message = "Could not fetch playlist"
+            return result
+        
+        playlist_name = playlist.get('name', 'Unknown')
+        
+        print_info(f"Scanning playlist: {playlist_name}")
+        
+        # Find duplicates
+        duplicates, tracks = self.find_duplicates(
+            playlist_uri,
+            include_similar,
+            lambda s: print_info(s)
+        )
         
         if not duplicates:
             print_success("No duplicates found!")
-            return []
+            result.duration_seconds = time.time() - start_time
+            return result
         
+        # Count types
         exact = [d for d in duplicates if d.match_type == 'exact']
         similar = [d for d in duplicates if d.match_type == 'similar']
         
+        result.duplicates_found = len(duplicates)
+        result.exact_duplicates = len(exact)
+        result.similar_duplicates = len(similar)
+        
+        # Display duplicates
         print()
         print_info(f"Found {len(duplicates)} duplicates in {len(tracks)} tracks:")
         print_info(f"  - Exact duplicates: {len(exact)}")
-        print_info(f"  - Similar tracks: {len(similar)}")
+        if include_similar:
+            print_info(f"  - Similar tracks: {len(similar)}")
         print()
         
         DuplicateDetector.display_duplicates(duplicates)
         
-        return duplicates
+        # Ask user if they want to remove
+        print()
+        if RICH_AVAILABLE:
+            should_remove = Confirm.ask(
+                f"Remove {len(duplicates)} duplicate(s)?",
+                default=False
+            )
+        else:
+            response = input(f"Remove {len(duplicates)} duplicate(s)? [y/N]: ").strip().lower()
+            should_remove = response in ('y', 'yes')
+        
+        if not should_remove:
+            print_info("No changes made")
+            result.duration_seconds = time.time() - start_time
+            return result
+        
+        # Create backup if requested
+        if create_backup:
+            print_info("Creating backup...")
+            track_uris = [t.uri for t in tracks]
+            PlaylistBackup.create(
+                playlist_uri,
+                playlist_name,
+                track_uris,
+                "deduplicate"
+            )
+        
+        # Remove duplicates
+        print_info("Removing duplicates...")
+        
+        uris_to_remove = [d.uri for d in duplicates]
+        
+        removed, failed = self.ops.remove_tracks(
+            playlist_uri,
+            uris_to_remove
+        )
+        
+        result.duplicates_removed = removed
+        result.removed_tracks = duplicates
+        
+        if failed > 0:
+            result.error_message = f"Failed to remove {failed} tracks"
+        else:
+            PlaylistBackup.complete()
+        
+        result.duration_seconds = time.time() - start_time
+        
+        # Display result
+        if removed > 0:
+            print_success(f"Removed {removed} duplicates")
+        
+        if failed > 0:
+            print_warning(f"Failed to remove {failed} tracks")
+        
+        return result
     
     def remove_duplicates(
         self,
@@ -5627,7 +5776,7 @@ class PlaylistDeduplicator:
         create_backup: bool = True
     ) -> DedupeResult:
         """
-        Remove duplicates from a playlist.
+        Remove duplicates without interactive confirmation (for CLI/automation).
         
         Args:
             playlist_uri: Playlist URI
@@ -6199,8 +6348,16 @@ class PlaylistTools:
         playlist_uri: str,
         include_similar: bool = False
     ) -> DedupeResult:
-        """Remove duplicates from a playlist."""
+        """Remove duplicates from a playlist (non-interactive)."""
         return self.deduplicator.remove_duplicates(playlist_uri, include_similar)
+    
+    def interactive_dedupe(
+        self,
+        playlist_uri: str,
+        include_similar: bool = False
+    ) -> DedupeResult:
+        """Interactive deduplication with preview."""
+        return self.deduplicator.interactive_dedupe(playlist_uri, include_similar)
     
     def duplicate(
         self,
@@ -7611,8 +7768,7 @@ class MenuBuilder:
         menu.add_item(MenuItem(
             key="5",
             label="Playlist Tools",
-            description="Sort, dedupe, analyze",
-            enabled=has_playlist
+            description="Sort, dedupe, analyze any playlist"
         ))
         
         menu.add_separator()
@@ -7755,32 +7911,26 @@ class MenuBuilder:
         
         menu.add_item(MenuItem(
             key="2",
-            label="Remove Duplicates",
-            description="Find & remove duplicate tracks"
-        ))
-        
-        menu.add_item(MenuItem(
-            key="3",
-            label="Preview Duplicates",
-            description="See duplicates without removing"
+            label="Find & Remove Duplicates",
+            description="Preview and optionally remove"
         ))
         
         menu.add_separator()
         
         menu.add_item(MenuItem(
-            key="4",
+            key="3",
             label="Analyze Playlist",
             description="View statistics"
         ))
         
         menu.add_item(MenuItem(
-            key="5",
+            key="4",
             label="Duplicate Playlist",
             description="Create a copy"
         ))
         
         menu.add_item(MenuItem(
-            key="6",
+            key="5",
             label="Remove Artist Tracks",
             description="Remove all tracks by an artist"
         ))
@@ -7931,6 +8081,171 @@ class MenuBuilder:
 
 
 # ============================================
+# PLAYLIST SELECTOR FOR TOOLS
+# ============================================
+
+class PlaylistToolsSelector:
+    """Helper for selecting playlists for playlist tools operations."""
+    
+    def __init__(self, spotify_api: SpotifyAPI, playlist_ops: PlaylistOperations):
+        self.api = spotify_api
+        self.ops = playlist_ops
+        self._cached_playlists: Optional[List[Dict]] = None
+    
+    def get_user_playlists(self, force_refresh: bool = False) -> List[Dict]:
+        """Get user's playlists with caching."""
+        if self._cached_playlists is None or force_refresh:
+            self._cached_playlists = self.api.get_user_playlists(limit=0)  # 0 = all
+        return self._cached_playlists
+    
+    def clear_cache(self):
+        """Clear cached playlists."""
+        self._cached_playlists = None
+    
+    def display_playlists(self, playlists: Optional[List[Dict]] = None):
+        """Display playlists in a formatted table."""
+        if playlists is None:
+            playlists = self.get_user_playlists()
+        
+        if not playlists:
+            print_warning("No playlists found")
+            return
+        
+        if RICH_AVAILABLE:
+            table = Table(
+                title="Select a Playlist",
+                show_header=True,
+                header_style="bold cyan"
+            )
+            table.add_column("#", style="dim", width=4)
+            table.add_column("Name", style="white")
+            table.add_column("Tracks", justify="right")
+            
+            for idx, playlist in enumerate(playlists, 1):
+                table.add_row(
+                    str(idx),
+                    playlist.get('name', 'Unknown')[:50],
+                    str(playlist.get('tracks', {}).get('total', 0))
+                )
+            
+            console.print(table)
+        else:
+            print("\n=== Select a Playlist ===")
+            for idx, playlist in enumerate(playlists, 1):
+                tracks = playlist.get('tracks', {}).get('total', 0)
+                print(f"  {idx:3}. {playlist.get('name', 'Unknown')[:45]} ({tracks} tracks)")
+            print()
+    
+    def select_playlist(
+        self,
+        prompt_message: str = "Select playlist",
+        allow_manual: bool = True,
+        show_profile_playlist: bool = True
+    ) -> Optional[Dict]:
+        """
+        Interactive playlist selection.
+        
+        Args:
+            prompt_message: Prompt to display
+            allow_manual: Allow manual URI entry
+            show_profile_playlist: Show option for current profile's playlist
+            
+        Returns:
+            Selected playlist dict or None
+        """
+        playlists = self.get_user_playlists()
+        
+        if not playlists:
+            print_warning("No playlists found in your library")
+            if allow_manual:
+                return self._manual_playlist_entry()
+            return None
+        
+        self.display_playlists(playlists)
+        
+        options = []
+        if show_profile_playlist and config_manager:
+            profile = config_manager.get_active_profile()
+            if profile.playlist_uri:
+                options.append(f"'p' for profile playlist ({profile.playlist_name})")
+        
+        if allow_manual:
+            options.append("'m' for manual entry")
+        
+        options.append("0 to cancel")
+        
+        print_info(f"Enter 1-{len(playlists)}, {', '.join(options)}")
+        
+        try:
+            if RICH_AVAILABLE:
+                choice = Prompt.ask(prompt_message)
+            else:
+                choice = input(f"{prompt_message}: ").strip()
+            
+            if not choice:
+                return None
+            
+            # Check for special options
+            if choice.lower() == 'm' and allow_manual:
+                return self._manual_playlist_entry()
+            
+            if choice.lower() == 'p' and show_profile_playlist and config_manager:
+                profile = config_manager.get_active_profile()
+                if profile.playlist_uri:
+                    return self.ops.get_playlist_details(profile.playlist_uri)
+            
+            if choice == '0':
+                return None
+            
+            # Try as number
+            choice_num = int(choice)
+            
+            if 1 <= choice_num <= len(playlists):
+                return playlists[choice_num - 1]
+            
+            print_error("Invalid selection")
+            return None
+            
+        except ValueError:
+            if allow_manual and choice:
+                # Try as URI
+                return self._manual_playlist_entry(choice)
+            print_error("Invalid input")
+            return None
+    
+    def _manual_playlist_entry(self, initial_value: str = "") -> Optional[Dict]:
+        """Manual playlist URI/URL entry."""
+        if RICH_AVAILABLE:
+            uri = Prompt.ask(
+                "Enter playlist URL or URI",
+                default=initial_value
+            ) if not initial_value else initial_value
+        else:
+            if initial_value:
+                uri = initial_value
+            else:
+                uri = input("Enter playlist URL or URI: ").strip()
+        
+        if not uri:
+            return None
+        
+        # Normalize and validate
+        playlist_id = parse_spotify_uri(uri, "playlist")
+        if not playlist_id:
+            print_error("Invalid playlist URL/URI")
+            return None
+        
+        # Fetch details
+        playlist = self.ops.get_playlist_details(f"spotify:playlist:{playlist_id}")
+        if not playlist:
+            print_error("Could not find playlist")
+            return None
+        
+        print_success(f"Selected: {playlist.get('name', 'Unknown')}")
+        return playlist
+
+
+# ============================================
 # MENU HANDLERS
 # ============================================
 
@@ -7948,6 +8263,14 @@ class MenuHandler:
         self.profile_manager = profile_manager
         self.profile_menu = profile_menu
         self.app_state = app_state
+        self._tools_selector: Optional[PlaylistToolsSelector] = None
+    
+    @property
+    def tools_selector(self) -> PlaylistToolsSelector:
+        """Get or create playlist tools selector."""
+        if self._tools_selector is None and spotify_api and playlist_ops:
+            self._tools_selector = PlaylistToolsSelector(spotify_api, playlist_ops)
+        return self._tools_selector
     
     def prompt(self, message: str, default: str = "") -> str:
         """Prompt for input."""
@@ -8054,14 +8377,6 @@ class MenuHandler:
             return
         
         # Extract unique artists
-        artist_uris = set()
-        for track in tracks:
-            # Get primary artist only
-            if track.artists:
-                # We need to fetch artist URI - construct it from name lookup
-                pass
-        
-        # For simplicity, let's use a different approach
         print_info(f"Found {len(tracks)} tracks, extracting artists...")
         
         seen_artists = {}
@@ -8265,15 +8580,46 @@ class MenuHandler:
             print_success("Playlist setting cleared")
     
     # ============================================
-    # PLAYLIST TOOLS HANDLERS
+    # PLAYLIST TOOLS HANDLERS (UPDATED)
     # ============================================
     
-    def handle_sort_playlist(self):
-        """Sort playlist."""
-        profile = self.config_manager.get_active_profile()
+    def _select_playlist_for_tools(self, operation_name: str) -> Optional[Dict]:
+        """
+        Select a playlist for tools operations.
         
-        if not profile.playlist_uri or not playlist_tools:
+        Args:
+            operation_name: Name of the operation for display
+            
+        Returns:
+            Selected playlist dict or None
+        """
+        if not self.tools_selector:
+            print_error("Playlist tools not available")
+            return None
+        
+        print_info(f"Select playlist to {operation_name}:")
+        return self.tools_selector.select_playlist(
+            prompt_message="Select playlist",
+            allow_manual=True,
+            show_profile_playlist=True
+        )
+    
+    def handle_sort_playlist(self):
+        """Sort playlist - allows selecting any playlist."""
+        if not playlist_tools:
+            print_error("Playlist tools not available")
             return
+        
+        # Select playlist
+        playlist = self._select_playlist_for_tools("sort")
+        if not playlist:
+            return
+        
+        playlist_uri = playlist.get('uri', '')
+        playlist_name = playlist.get('name', 'Unknown')
+        
+        print()
+        print_info(f"Sorting: {playlist_name}")
         
         playlist_tools.sorter.display_sort_options()
         
@@ -8293,11 +8639,11 @@ class MenuHandler:
             
             criteria, order = sort_config
             
-            if not self.confirm(f"Sort playlist by {criteria.value}?"):
+            if not self.confirm(f"Sort '{playlist_name}' by {criteria.value}?"):
                 return
             
             print_info("Sorting playlist...")
-            result = playlist_tools.sort(profile.playlist_uri, criteria, order)
+            result = playlist_tools.sort(playlist_uri, criteria, order)
             
             if result.success:
                 print_success(f"Sorted {result.tracks_sorted} tracks")
@@ -8310,67 +8656,90 @@ class MenuHandler:
         self.wait_for_key()
     
     def handle_dedupe_playlist(self):
-        """Remove duplicates."""
-        profile = self.config_manager.get_active_profile()
-        
-        if not profile.playlist_uri or not playlist_tools:
+        """Find and remove duplicates - allows selecting any playlist."""
+        if not playlist_tools:
+            print_error("Playlist tools not available")
             return
         
-        include_similar = self.confirm("Include similar tracks (same name + artist)?", default=False)
-        
-        if not self.confirm("Remove duplicates?"):
+        # Select playlist
+        playlist = self._select_playlist_for_tools("deduplicate")
+        if not playlist:
             return
         
-        print_info("Removing duplicates...")
-        result = playlist_tools.deduplicate(profile.playlist_uri, include_similar)
-        playlist_tools.deduplicator.display_result(result)
-        self.wait_for_key()
-    
-    def handle_preview_duplicates(self):
-        """Preview duplicates."""
-        profile = self.config_manager.get_active_profile()
+        playlist_uri = playlist.get('uri', '')
+        playlist_name = playlist.get('name', 'Unknown')
         
-        if not profile.playlist_uri or not playlist_tools:
-            return
+        print()
+        print_info(f"Checking for duplicates in: {playlist_name}")
         
-        include_similar = self.confirm("Include similar tracks?", default=False)
-        playlist_tools.deduplicator.preview_duplicates(profile.playlist_uri, include_similar)
+        # Ask about similar matches
+        include_similar = self.confirm(
+            "Include similar tracks (same name + artist)?",
+            default=False
+        )
+        
+        # Use interactive dedupe which previews then asks to remove
+        result = playlist_tools.interactive_dedupe(playlist_uri, include_similar)
+        
         self.wait_for_key()
     
     def handle_analyze_playlist(self):
-        """Analyze playlist."""
-        profile = self.config_manager.get_active_profile()
-        
-        if not profile.playlist_uri or not playlist_tools:
+        """Analyze playlist - allows selecting any playlist."""
+        if not playlist_tools:
+            print_error("Playlist tools not available")
             return
         
+        # Select playlist
+        playlist = self._select_playlist_for_tools("analyze")
+        if not playlist:
+            return
+        
+        playlist_uri = playlist.get('uri', '')
+        
         detailed = self.confirm("Include detailed analysis?", default=True)
-        playlist_tools.analyzer.display_analysis(profile.playlist_uri, detailed)
+        playlist_tools.analyzer.display_analysis(playlist_uri, detailed)
         self.wait_for_key()
     
     def handle_duplicate_playlist(self):
-        """Duplicate playlist."""
-        profile = self.config_manager.get_active_profile()
-        
-        if not profile.playlist_uri or not playlist_tools:
+        """Duplicate playlist - allows selecting any playlist."""
+        if not playlist_tools:
+            print_error("Playlist tools not available")
             return
         
-        new_name = self.prompt("Name for copy", default=f"{profile.playlist_name} (Copy)")
+        # Select playlist
+        playlist = self._select_playlist_for_tools("duplicate")
+        if not playlist:
+            return
+        
+        playlist_uri = playlist.get('uri', '')
+        playlist_name = playlist.get('name', 'Unknown')
+        
+        new_name = self.prompt("Name for copy", default=f"{playlist_name} (Copy)")
         
         if not new_name:
             return
         
         print_info("Duplicating playlist...")
-        result = playlist_tools.duplicate(profile.playlist_uri, new_name)
+        result = playlist_tools.duplicate(playlist_uri, new_name)
         playlist_tools.duplicator.display_result(result)
         self.wait_for_key()
     
     def handle_remove_artist_tracks(self):
-        """Remove all tracks by an artist."""
-        profile = self.config_manager.get_active_profile()
-        
-        if not profile.playlist_uri or not playlist_tools:
+        """Remove all tracks by an artist - allows selecting any playlist."""
+        if not playlist_tools:
+            print_error("Playlist tools not available")
             return
+        
+        # Select playlist
+        playlist = self._select_playlist_for_tools("remove artist tracks from")
+        if not playlist:
+            return
+        
+        playlist_uri = playlist.get('uri', '')
+        playlist_name = playlist.get('name', 'Unknown')
+        
+        print()
+        print_info(f"Playlist: {playlist_name}")
         
         # Search for artist
         if artist_searcher:
@@ -8378,11 +8747,11 @@ class MenuHandler:
             if not artist:
                 return
             
-            if not self.confirm(f"Remove all tracks by '{artist.name}' from playlist?"):
+            if not self.confirm(f"Remove all tracks by '{artist.name}' from '{playlist_name}'?"):
                 return
             
             print_info("Removing tracks...")
-            removed, name = playlist_tools.remove_artist(profile.playlist_uri, artist.uri)
+            removed, name = playlist_tools.remove_artist(playlist_uri, artist.uri)
             
             if removed > 0:
                 print_success(f"Removed {removed} tracks by {name}")
@@ -8390,63 +8759,6 @@ class MenuHandler:
                 print_info(f"No tracks by {name} found")
             
             self.wait_for_key()
-    
-    # ============================================
-    # SETTINGS HANDLERS
-    # ============================================
-    
-    def handle_edit_settings(self):
-        """Edit all settings."""
-        self.profile_menu.run_edit_settings()
-    
-    def handle_toggle_setting(self, setting: str):
-        """Toggle a boolean setting."""
-        profile = self.config_manager.get_active_profile()
-        
-        current = getattr(profile, setting, False)
-        new_value = not current
-        setattr(profile, setting, new_value)
-        self.config_manager.save()
-        
-        print_success(f"{setting}: {'Yes' if new_value else 'No'}")
-    
-    def handle_change_interval(self):
-        """Change check interval."""
-        profile = self.config_manager.get_active_profile()
-        
-        try:
-            if RICH_AVAILABLE:
-                value = IntPrompt.ask(f"Check interval (hours)", default=profile.check_interval)
-            else:
-                value = int(input(f"Check interval (hours) [{profile.check_interval}]: ") or str(profile.check_interval))
-            
-            if 1 <= value <= 168:
-                profile.check_interval = value
-                self.config_manager.save()
-                print_success(f"Check interval: {value}h")
-            else:
-                print_error("Value must be 1-168")
-        except ValueError:
-            print_error("Invalid number")
-    
-    def handle_change_days(self):
-        """Change days to check."""
-        profile = self.config_manager.get_active_profile()
-        
-        try:
-            if RICH_AVAILABLE:
-                value = IntPrompt.ask(f"Days to check (0=all)", default=profile.days_to_check)
-            else:
-                value = int(input(f"Days to check (0=all) [{profile.days_to_check}]: ") or str(profile.days_to_check))
-            
-            if 0 <= value <= 365:
-                profile.days_to_check = value
-                self.config_manager.save()
-                print_success(f"Days to check: {value if value > 0 else 'All time'}")
-            else:
-                print_error("Value must be 0-365")
-        except ValueError:
-            print_error("Invalid number")
     
     # ============================================
     # SETTINGS HANDLERS
@@ -8680,12 +8992,10 @@ class ApplicationUI:
             elif choice == '2':
                 self.handler.handle_dedupe_playlist()
             elif choice == '3':
-                self.handler.handle_preview_duplicates()
-            elif choice == '4':
                 self.handler.handle_analyze_playlist()
-            elif choice == '5':
+            elif choice == '4':
                 self.handler.handle_duplicate_playlist()
-            elif choice == '6':
+            elif choice == '5':
                 self.handler.handle_remove_artist_tracks()
     
     def run_profiles_menu(self):
@@ -8717,8 +9027,6 @@ class ApplicationUI:
     
     def run_settings_menu(self):
         """Run the settings submenu."""
-        profile = self.config_manager.get_active_profile()
-        
         while True:
             clear_screen()
             display_header()
