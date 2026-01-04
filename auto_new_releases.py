@@ -4802,32 +4802,33 @@ class ReleaseChecker:
     ) -> List[ProfileCheckResult]:
         """
         Check all profiles for new releases.
-        
+
         Args:
             progress_callback: Optional callback(profile_name, current, total)
             silent: If True, suppress output
-            
+
         Returns:
             List of ProfileCheckResult
         """
         profiles = self.config_manager.config.profiles
         results = []
-        
+
         for idx, profile in enumerate(profiles):
             if progress_callback:
                 progress_callback(profile.name, idx + 1, len(profiles))
-            
+
             if not silent:
-                print_info(f"\n{'='*50}")
-                print_info(f"Checking profile: {profile.name} ({idx + 1}/{len(profiles)})")
-                print_info(f"{'='*50}")
-            
+                print()
+                print("=" * 50)
+                print_info(f"Profile {idx + 1}/{len(profiles)}: {profile.name}")
+                print("=" * 50)
+
             result = self.check_profile(profile, silent=silent)
             results.append(result)
-            
+
             if not silent:
                 result.display()
-        
+
         return results
 
 
@@ -5080,9 +5081,10 @@ class InteractiveChecker:
         total_added = 0
         
         for idx, profile in enumerate(profiles):
-            print_info(f"\n{'='*50}")
+            print()
+            print("=" * 50)
             print_info(f"Profile {idx + 1}/{len(profiles)}: {profile.name}")
-            print_info(f"{'='*50}")
+            print("=" * 50)
             
             if not profile.playlist_uri:
                 print_warning("Skipping - no playlist configured")
@@ -5112,9 +5114,9 @@ class InteractiveChecker:
         
         # Summary
         print()
-        print_info(f"{'='*50}")
+        print("=" * 50)
         print_info("SUMMARY")
-        print_info(f"{'='*50}")
+        print("=" * 50)
         
         successful = sum(1 for r in results if r.status in [CheckStatus.SUCCESS, CheckStatus.PARTIAL])
         with_new = sum(1 for r in results if r.total_tracks_added > 0)
