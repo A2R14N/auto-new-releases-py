@@ -37,7 +37,7 @@ except ImportError:
 
 # CONSTANTS & CONFIGURATION
 APP_NAME = "Auto New Releases"
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
 CONFIG_DIR = Path.home() / ".config" / "auto-new-releases"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 CACHE_FILE = CONFIG_DIR / "cache.json"
