@@ -10,13 +10,13 @@
 
 **An intelligent, terminal-driven Spotify release radar that automatically tracks your favorite artists, filters out unwanted noise, and syncs fresh drops directly into dedicated playlists.**
 
-[Features](#-key-features) •
-[Architecture](#-dual-engine-architecture) •
-[Installation](#-getting-started) •
-[Spicetify Bridge](#-spicetify-bridge-setup-recommended) •
-[CLI Reference](#-cli-command-reference) •
-[Configuration](#-configuration--filtering-engine) •
-[Automation](#-automation--background-scheduling)
+[Features](#features) •
+[Architecture](#architecture) •
+[Installation](#installation) •
+[Spicetify Bridge](#spicetify-bridge) •
+[CLI Reference](#cli-reference) •
+[Configuration](#configuration) •
+[Automation](#automation)
 
 </div>
 
@@ -43,6 +43,7 @@ ANR monitors your hand-picked artist roster, detects new singles and albums with
 
 ---
 
+<a id="features"></a>
 ## ✨ Key Features
 
 - **🔄 Dual-Engine Connectivity**:
@@ -64,6 +65,7 @@ ANR monitors your hand-picked artist roster, detects new singles and albums with
 
 ---
 
+<a id="architecture"></a>
 ## 🏗️ Dual-Engine Architecture
 
 ANR dynamically selects the best communication channel based on your environment:
@@ -78,6 +80,7 @@ ANR dynamically selects the best communication channel based on your environment
 
 ---
 
+<a id="installation"></a>
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -119,6 +122,7 @@ ANR dynamically selects the best communication channel based on your environment
 
 Choose your preferred connection method:
 
+<a id="spicetify-bridge"></a>
 ### Option A: Spicetify Bridge Setup *(Recommended)*
 
 The Spicetify bridge lets ANR interact with Spotify locally without needing Spotify Developer API keys.
@@ -181,6 +185,7 @@ anr
 
 ---
 
+<a id="cli-reference"></a>
 ## 📖 CLI Command Reference
 
 ANR comes with a comprehensive non-interactive CLI for scripting and automation:
@@ -228,6 +233,7 @@ ANR comes with a comprehensive non-interactive CLI for scripting and automation:
 
 ---
 
+<a id="configuration"></a>
 ## ⚙️ Configuration & Filtering Engine
 
 Each profile in ANR maintains independent filter rules configured via the settings menu (`anr` -> `6`):
@@ -258,6 +264,7 @@ Each profile in ANR maintains independent filter rules configured via the settin
 
 ---
 
+<a id="automation"></a>
 ## ⏰ Automation & Background Scheduling
 
 ### Daemon Mode
