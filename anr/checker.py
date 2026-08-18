@@ -21,6 +21,51 @@ from .playlist import PlaylistOperations
 from .filters import RemixDetector, ReleaseDateFilter
 
 
+def _print_section_header(title: str, position: str = "") -> None:
+    """Print a quiet, easy-to-scan section header."""
+    width = 64
+    if RICH_AVAILABLE:
+        heading = f"[bold cyan]{title}[/]"
+        if position:
+            heading += f" [dim]{position:>{max(1, width - len(title) - len(position))}}[/]"
+        console.print(heading)
+        console.print("-" * width, style="dim")
+    else:
+        suffix = f"  {position}" if position else ""
+        print(f"{title}{suffix}")
+        print("-" * width)
+
+
+def _aurora_color(position: float) -> str:
+    """Return the shared aurora color for a normalized 0..1 position."""
+    stops = ((95, 135, 215), (56, 189, 248), (30, 215, 96))
+    position = max(0.0, min(1.0, position))
+    if position <= 0.5:
+        start, end, amount = stops[0], stops[1], position * 2
+    else:
+        start, end, amount = stops[1], stops[2], (position - 0.5) * 2
+
+    rgb = tuple(round(a + (b - a) * amount) for a, b in zip(start, end))
+    return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+
+
+def _print_artist_progress(current: int, total: int, artist_name: str) -> None:
+    """Print artist progress using an aurora blue-to-green gradient."""
+    counter = f"{current:>{len(str(total))}}/{total}"
+    if RICH_AVAILABLE:
+        from rich.text import Text
+
+        progress = (current - 1) / max(total - 1, 1)
+        color = _aurora_color(progress)
+        line = Text("  ")
+        line.append(counter, style=f"bold {color}")
+        line.append("  ")
+        line.append(artist_name, style=color)
+        console.print(line)
+    else:
+        print(f"  {counter}  {artist_name}")
+
+
 class CheckStatus(Enum):
     """Status of a release check operation."""
     SUCCESS = "success"
@@ -215,7 +260,9 @@ class ReleaseChecker:
                     existing_signatures.add(f"{t.name.lower()}|||{t.primary_artist.lower()}")
 
             if not silent:
-                print_info(f"Playlist has {len(existing_uris)} existing tracks")
+                print_info(f"Playlist   {len(existing_uris):,} existing tracks")
+                print_info(f"Artists    {len(profile.artists)} to check")
+                print()
 
             if not hasattr(profile, 'tracked_tracks') or profile.tracked_tracks is None:
                 profile.tracked_tracks = {}
@@ -233,7 +280,7 @@ class ReleaseChecker:
                     ))
 
                 if not silent:
-                    print_info(f"[{idx + 1}/{len(profile.artists)}] Checking {artist.name}...")
+                    _print_artist_progress(idx + 1, len(profile.artists), artist.name)
 
                 try:
                     all_releases = self.release_fetcher.get_artist_releases(artist.uri)
@@ -462,9 +509,7 @@ class ReleaseChecker:
 
             if not silent:
                 print()
-                print("=" * 50)
-                print_info(f"Profile {idx + 1}/{len(profiles)}: {profile.name}")
-                print("=" * 50)
+                _print_section_header(profile.name, f"Profile {idx + 1} of {len(profiles)}")
 
             result = self.check_profile(profile, silent=silent)
             results.append(result)
@@ -530,12 +575,36 @@ class InteractiveChecker:
         print()
 
         if RICH_AVAILABLE:
-            from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TaskProgressColumn
+            from rich.progress import (
+                Progress, ProgressColumn, SpinnerColumn, TextColumn,
+                TaskProgressColumn,
+            )
+            from rich.text import Text
+
+            class AuroraBarColumn(ProgressColumn):
+                """A live progress bar using the shared ANR aurora palette."""
+
+                def __init__(self, width: int = 24):
+                    super().__init__()
+                    self.width = width
+
+                def render(self, task):
+                    ratio = 0.0 if task.total is None else task.completed / max(task.total, 1)
+                    ratio = max(0.0, min(1.0, ratio))
+                    filled = round(self.width * ratio)
+                    bar = Text()
+                    for index in range(self.width):
+                        if index < filled:
+                            position = index / max(self.width - 1, 1)
+                            bar.append("━", style=f"bold {_aurora_color(position)}")
+                        else:
+                            bar.append("━", style="bright_black")
+                    return bar
 
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[bold blue]{task.description}"),
-                BarColumn(),
+                AuroraBarColumn(),
                 TaskProgressColumn(),
                 TextColumn("[dim]{task.fields[status]}"),
                 console=console
@@ -603,9 +672,7 @@ class InteractiveChecker:
 
         for idx, profile in enumerate(profiles):
             print()
-            print("=" * 50)
-            print_info(f"Profile {idx + 1}/{len(profiles)}: {profile.name}")
-            print("=" * 50)
+            _print_section_header(profile.name, f"Profile {idx + 1} of {len(profiles)}")
 
             if not profile.playlist_uri:
                 print_warning("Skipping - no playlist configured")
@@ -633,9 +700,7 @@ class InteractiveChecker:
                 time.sleep(1)
 
         print()
-        print("=" * 50)
-        print_info("SUMMARY")
-        print("=" * 50)
+        _print_section_header("Summary")
 
         with_new = sum(1 for r in results if r.total_tracks_added > 0)
         print_success(f"Checked {len(results)} profiles")

@@ -66,6 +66,7 @@ config.json
 cache.json
 anr-*.json
 *.log
+menu_previews*
 
 # Editors / OS Files
 .idea/

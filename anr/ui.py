@@ -52,6 +52,145 @@ def display_status_bar(config_manager: ConfigManager):
         print()
 
 
+def display_main_dashboard(config_manager: ConfigManager, ready: bool):
+    """Render the compact structured dashboard used by the main menu."""
+    profile = config_manager.get_active_profile()
+    profiles = config_manager.config.profiles
+    playlist = profile.playlist_name or "Not configured"
+    last_check = "Never"
+    if profile.last_check:
+        last_check = datetime.fromtimestamp(profile.last_check).strftime("%Y-%m-%d %H:%M")
+
+    if not RICH_AVAILABLE:
+        display_header()
+        display_status_bar(config_manager)
+        return False
+
+    from rich import box
+    from rich.console import Group
+    from rich.panel import Panel
+    from rich.rule import Rule
+    from rich.table import Table
+    from rich.text import Text
+
+    profile_row = Table.grid(expand=True)
+    profile_row.add_column()
+    profile_row.add_column(justify="right")
+    profile_row.add_row(
+        Text(profile.name, style="bold #38bdf8"),
+        Text("● Ready" if ready else "● Setup required",
+             style="bold #1ed760" if ready else "bold yellow"),
+    )
+    profile_row.add_row(
+        Text(f"{len(profile.artists)} artists · {playlist}", style="dim"),
+        Text(last_check, style="dim"),
+    )
+
+    actions = Table.grid(padding=(0, 1), expand=True)
+    actions.add_column(width=4)
+    actions.add_column()
+    actions.add_column(justify="right", style="dim")
+
+    def add_action(key: str, label: str, detail: str = "", selected: bool = False):
+        key_text = Text(f">{key}" if selected else f" {key}",
+                        style="bold #38bdf8" if selected else "bold #7dd3fc")
+        label_text = Text(label, style="bold white" if selected else "white")
+        detail_text = Text(detail, style="#1ed760" if selected and ready else "dim")
+        actions.add_row(key_text, label_text, detail_text)
+
+    add_action("1", "Check current profile", "Ready" if ready else "Setup required", True)
+    add_action("2", "Check all profiles", f"{len(profiles)} profiles")
+    add_action("3", "Manage artists", f"{len(profile.artists)} tracked")
+    add_action("4", "Manage playlist", playlist)
+    add_action("5", "Manage profiles", f"{len(profiles)} profiles")
+    add_action("6", "Settings")
+
+    title = Text(APP_NAME, style="bold white")
+    title.append(f"  v{APP_VERSION}", style="dim")
+    footer = Text()
+    footer.append(" [S]", style="bold #7dd3fc")
+    footer.append(" Schedule     ", style="dim")
+    footer.append("[7]", style="bold #7dd3fc")
+    footer.append(" Import / Export     ", style="dim")
+    footer.append("[Q]", style="bold #7dd3fc")
+    footer.append(" Quit", style="dim")
+
+    body = Group(
+        profile_row,
+        Rule("Actions", style="#38bdf8"),
+        actions,
+        Rule(style="dim", characters="-"),
+        footer,
+    )
+    panel_width = min(68, max(54, console.size.width))
+    console.print(Panel(
+        body,
+        title=title,
+        width=panel_width,
+        box=box.ROUNDED,
+        border_style="#5f87d7",
+        padding=(1, 2),
+    ))
+    return True
+
+
+def display_profiles_dashboard(config_manager: ConfigManager):
+    """Render profile selection and profile actions in a single compact view."""
+    profiles = config_manager.config.profiles
+
+    if not RICH_AVAILABLE:
+        for index, profile in enumerate(profiles, 1):
+            active = " [Active]" if profile.id == config_manager.config.active_profile_id else ""
+            print(f"  {index}. {profile.name} - {len(profile.artists)} artists - "
+                  f"{profile.playlist_name or 'Not set'}{active}")
+        print("\n  [N] New  [R] Rename  [D] Duplicate  [X] Delete  [0] Back\n")
+        return
+
+    from rich import box
+    from rich.console import Group
+    from rich.panel import Panel
+    from rich.rule import Rule
+    from rich.table import Table
+    from rich.text import Text
+
+    table = Table.grid(expand=True, padding=(0, 1))
+    table.add_column(width=3, justify="right")
+    table.add_column(width=17, overflow="ellipsis", no_wrap=True)
+    table.add_column(width=11, justify="right", no_wrap=True)
+    table.add_column(ratio=1, overflow="ellipsis", no_wrap=True)
+    table.add_column(width=7, justify="right")
+
+    for index, profile in enumerate(profiles, 1):
+        active = profile.id == config_manager.config.active_profile_id
+        artist_word = "artist" if len(profile.artists) == 1 else "artists"
+        table.add_row(
+            Text(str(index), style="bold #38bdf8" if active else "bold #7dd3fc"),
+            Text(profile.name, style="bold #38bdf8" if active else "white"),
+            Text(f"{len(profile.artists)} {artist_word}", style="dim"),
+            Text(profile.playlist_name or "Not configured", style="dim"),
+            Text("Active" if active else "", style="bold #1ed760"),
+        )
+
+    footer = Text()
+    for key, label in (("N", "New"), ("R", "Rename"), ("D", "Duplicate"),
+                       ("X", "Delete"), ("0", "Back")):
+        if footer:
+            footer.append("   ")
+        footer.append(f"[{key}]", style="bold #7dd3fc")
+        footer.append(f" {label}", style="dim")
+
+    body = Group(table, Rule(style="dim", characters="-"), footer)
+    panel_width = min(72, max(58, console.size.width))
+    console.print(Panel(
+        body,
+        title=Text(f"Profiles  ·  {len(profiles)}", style="bold white"),
+        width=panel_width,
+        box=box.ROUNDED,
+        border_style="#5f87d7",
+        padding=(1, 2),
+    ))
+
+
 def _prompt(message: str, default: str = "") -> str:
     if RICH_AVAILABLE:
         from rich.prompt import Prompt
@@ -80,23 +219,54 @@ def _print_menu(title: str, items: list, show_back: bool = True):
     items: list of (key, label, hint) tuples; use None for a separator.
     """
     if RICH_AVAILABLE:
+        from rich import box
+        from rich.console import Group
         from rich.panel import Panel
-        lines = []
+        from rich.rule import Rule
+        from rich.text import Text
+
+        sections = []
+        rows = []
+
+        def flush_rows():
+            if rows:
+                sections.extend(rows)
+                rows.clear()
+
         for item in items:
             if item is None:
-                lines.append("[dim]" + "─" * 42 + "[/]")
+                flush_rows()
+                sections.append(Rule(style="dim", characters="-"))
             else:
                 key, label, hint = item
                 if key:
-                    line = f"  [bold cyan]{key:>2}[/]  [bold white]{label}[/]"
+                    line = Text(" ")
+                    line.append(f"{key:>2}", style="bold #7dd3fc")
+                    line.append("       ")
+                    line.append(label, style="white")
                     if hint:
-                        line += f"  [dim]{hint}[/]"
-                    lines.append(line)
+                        padding = max(2, 48 - len(label) - len(hint))
+                        line.append(" " * padding)
+                        hint_style = "yellow" if "disabled" in hint or "no " in hint else "dim"
+                        line.append(hint, style=hint_style)
+                    rows.append(line)
+        flush_rows()
+
         if show_back:
-            lines.append("")
-            lines.append("   [bold cyan]0[/]  [bold white]Back[/]")
-        console.print(Panel("\n".join(lines), title=f"[bold]{title}[/]",
-                            border_style="cyan", padding=(1, 2)))
+            sections.append(Rule(style="dim", characters="-"))
+            back = Text("  0", style="bold #7dd3fc")
+            back.append("       Back", style="dim")
+            sections.append(back)
+
+        panel_width = min(68, max(54, console.size.width))
+        console.print(Panel(
+            Group(*sections),
+            title=Text(title, style="bold white"),
+            width=panel_width,
+            box=box.ROUNDED,
+            border_style="#5f87d7",
+            padding=(1, 2),
+        ))
     else:
         print(f"\n{'='*52}\n  {title}\n{'='*52}")
         for item in items:
@@ -156,8 +326,6 @@ class ApplicationUI:
 
     def _main_menu(self):
         clear_screen()
-        display_header()
-        display_status_bar(self.config_manager)
 
         profile = self._profile
         has_all = bool(profile.playlist_uri) and bool(profile.artists)
@@ -178,8 +346,10 @@ class ApplicationUI:
             ("s", "Schedule Status", ""),
             ("q", "Quit", ""),
         ]
-        _print_menu("Main Menu", items, show_back=False)
-        choice = _choice()
+        dashboard_rendered = display_main_dashboard(self.config_manager, has_all)
+        if not dashboard_rendered:
+            _print_menu("Main Menu", items, show_back=False)
+        choice = _choice("Command ›" if RICH_AVAILABLE else "Choice")
         app = self._app
 
         if choice == "q":
@@ -230,8 +400,8 @@ class ApplicationUI:
                 None,
                 ("l", "List Artists", f"{len(profile.artists)} tracked"),
             ]
-            _print_menu(f"Artists  ({len(profile.artists)} tracked)", items)
-            choice = _choice()
+            _print_menu(f"Artists  ·  {len(profile.artists)} tracked", items)
+            choice = _choice("Command ›")
 
             if choice == "0":
                 break
@@ -328,7 +498,7 @@ class ApplicationUI:
                 ]
 
             _print_menu("Playlist", items)
-            choice = _choice()
+            choice = _choice("Command ›")
 
             if choice == "0":
                 break
@@ -431,34 +601,47 @@ class ApplicationUI:
     def _menu_profiles(self):
         while True:
             profiles = self.config_manager.config.profiles
-            # Always show list at top
-            self.profile_manager.display_profiles()
-
-            items = [
-                ("1", "Switch Profile", ""),
-                ("2", "Create New Profile", ""),
-                None,
-                ("3", "Rename Profile", ""),
-                ("4", "Duplicate Profile", ""),
-                ("5", "Delete Profile", "disabled" if len(profiles) <= 1 else ""),
-            ]
-            _print_menu("Profiles", items)
-            choice = _choice()
+            clear_screen()
+            display_profiles_dashboard(self.config_manager)
+            choice = _choice("Profile ›  number to switch")
 
             if choice == "0":
                 break
-            elif choice == "1":
-                self.profile_menu.run_switch_profile()
-            elif choice == "2":
-                self.profile_menu.run_create_profile()
-            elif choice == "3":
-                self.profile_menu.run_rename_profile()
-            elif choice == "4":
-                self.profile_menu.run_duplicate_profile()
-            elif choice == "5" and len(profiles) > 1:
-                self.profile_menu.run_delete_profile()
-            elif choice == "5":
-                print_warning("Cannot delete the only profile")
+            elif choice.isdigit() and 1 <= int(choice) <= len(profiles):
+                self.profile_manager.switch_profile(profiles[int(choice) - 1].id)
+            elif choice == "n":
+                name = _prompt("New profile name")
+                if name:
+                    self.profile_manager.create_profile(name)
+            elif choice in ("r", "d", "x"):
+                action = {"r": "rename", "d": "duplicate", "x": "delete"}[choice]
+                target = self._select_profile_for_action(profiles, action)
+                if not target:
+                    continue
+                if choice == "r":
+                    new_name = _prompt("New name", default=target.name)
+                    if new_name and new_name != target.name:
+                        self.profile_manager.rename_profile(target.id, new_name)
+                elif choice == "d":
+                    new_name = _prompt("Name for copy", default=f"{target.name} (Copy)")
+                    if new_name:
+                        self.profile_manager.duplicate_profile(target.id, new_name)
+                elif len(profiles) <= 1:
+                    print_warning("Cannot delete the only profile")
+                elif _confirm(f"Delete '{target.name}'?"):
+                    self.profile_manager.delete_profile(target.id)
+            else:
+                print_warning("Enter a profile number or N, R, D, X, 0")
+
+    def _select_profile_for_action(self, profiles, action: str):
+        """Select from the profile list already visible without printing it again."""
+        choice = _choice(f"Profile to {action}  1-{len(profiles)} · 0 cancel")
+        if choice == "0":
+            return None
+        if choice.isdigit() and 1 <= int(choice) <= len(profiles):
+            return profiles[int(choice) - 1]
+        print_warning("Invalid profile number")
+        return None
 
     # ── settings ─────────────────────────────────────────
 
@@ -468,8 +651,7 @@ class ApplicationUI:
             profile = self._profile
             self._display_settings_table(profile)
 
-            print("  Type a letter to change, or Enter/0 to go back:")
-            raw = _choice("")
+            raw = _choice("Command ›  letter to change · 0 to go back")
 
             if raw in ("", "0"):
                 break
@@ -505,34 +687,56 @@ class ApplicationUI:
         track_count = len(getattr(profile, "tracked_tracks", {}))
 
         if RICH_AVAILABLE:
-            from rich.table import Table
-            t = Table(show_header=False, box=None, padding=(0, 3))
-            t.add_column(style="bold cyan", width=4)
-            t.add_column(style="bold white", width=24)
-            t.add_column(style="white", width=10)
-            t.add_column(style="bold cyan", width=4)
-            t.add_column(style="bold white", width=24)
-            t.add_column(style="white")
-
-            def g(v): return f"[green]{v}[/]" if v else f"[dim]{v}[/]"
-
-            t.add_row("\\[i]", "Check Interval", f"{profile.check_interval}h",
-                      "\\[d]", "Days to Check", str(days))
-            t.add_row("\\[s]", "Sort by Date", g("Yes" if profile.sort_by_date else "No"),
-                      "\\[r]", "Skip Remixes", g("Yes" if profile.skip_remixes else "No"))
-            t.add_row("\\[p]", "Skip Low Popularity", g("Yes" if profile.skip_low_popularity else "No"),
-                      "\\[m]", "Min Popularity", str(profile.min_popularity))
-            t.add_row("\\[a]", "Skip Long Albums", g("Yes" if profile.skip_long_albums else "No"),
-                      "\\[l]", "Limit per Album", g("Yes" if profile.limit_songs_per_album else "No"))
-            t.add_row("\\[x]", "Max Songs/Album", str(profile.max_songs_per_album),
-                      "\\[u]", "Skip Similar", g("Yes" if getattr(profile, "skip_similar_duplicates", False) else "No"))
-
+            from rich import box
+            from rich.console import Group
             from rich.panel import Panel
-            console.print(Panel(t, title=f"[bold]Settings — {profile.name}[/]",
-                                border_style="cyan", padding=(1, 2)))
-            console.print(f"  [dim]Tracked: {release_count} releases, {track_count} tracks "
-                          f"— type [bold]reset[/bold] to clear[/]")
-            console.print()
+            from rich.rule import Rule
+            from rich.table import Table
+            from rich.text import Text
+
+            t = Table.grid(expand=True, padding=(0, 1))
+            t.add_column(width=5, style="bold #7dd3fc")
+            t.add_column(style="white")
+            t.add_column(justify="right")
+
+            def setting_row(key, label, value, enabled=None):
+                if enabled is True:
+                    value_style = "bold #1ed760"
+                elif enabled is False:
+                    value_style = "dim"
+                else:
+                    value_style = "#38bdf8"
+                t.add_row(
+                    Text(f"[{key}]", style="bold #7dd3fc"),
+                    label,
+                    Text(str(value), style=value_style),
+                )
+
+            setting_row("i", "Check interval", f"{profile.check_interval}h")
+            setting_row("d", "Days to check", days)
+            setting_row("s", "Sort by date", "On" if profile.sort_by_date else "Off", profile.sort_by_date)
+            setting_row("r", "Skip remixes", "On" if profile.skip_remixes else "Off", profile.skip_remixes)
+            setting_row("p", "Skip low popularity", "On" if profile.skip_low_popularity else "Off", profile.skip_low_popularity)
+            setting_row("m", "Minimum popularity", profile.min_popularity)
+            setting_row("a", "Skip long albums", "On" if profile.skip_long_albums else "Off", profile.skip_long_albums)
+            setting_row("l", "Limit per album", "On" if profile.limit_songs_per_album else "Off", profile.limit_songs_per_album)
+            setting_row("x", "Maximum songs per album", profile.max_songs_per_album)
+            skip_similar = getattr(profile, "skip_similar_duplicates", False)
+            setting_row("u", "Skip similar tracks", "On" if skip_similar else "Off", skip_similar)
+
+            footer = Text("Tracked  ", style="dim")
+            footer.append(f"{release_count} releases  ·  {track_count} tracks", style="white")
+            footer.append("     [reset] Clear history", style="dim")
+            body = Group(t, Rule(style="dim", characters="-"), footer)
+            panel_width = min(68, max(54, console.size.width))
+            console.print(Panel(
+                body,
+                title=Text(f"Settings  ·  {profile.name}", style="bold white"),
+                width=panel_width,
+                box=box.ROUNDED,
+                border_style="#5f87d7",
+                padding=(1, 2),
+            ))
         else:
             print(f"\n  Settings — {profile.name}")
             print(f"  {'─'*48}")
@@ -595,10 +799,16 @@ class ApplicationUI:
         if not app:
             return
 
-        print("\n  Export:  [1] Current profile  [2] All profiles  [3] Artists only")
-        print("  Import:  [4] Import file      [5] Preview file")
-        print("  [0] Back\n")
-        choice = _choice()
+        items = [
+            ("1", "Export current profile", "complete backup"),
+            ("2", "Export all profiles", "complete backup"),
+            ("3", "Export artists only", "current profile"),
+            None,
+            ("4", "Import file", "JSON backup"),
+            ("5", "Preview file", "no changes made"),
+        ]
+        _print_menu("Import / Export", items)
+        choice = _choice("Command ›")
 
         if choice == "0":
             return

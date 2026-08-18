@@ -481,8 +481,49 @@ class ArtistSearcher:
             print_warning("No artists found")
             return []
 
+        artists = self._hydrate_artist_details(artists)
         self._display_search_results(artists)
         return artists
+
+    def _hydrate_artist_details(self, artists: List[Dict]) -> List[Dict]:
+        """Enrich lightweight search hits before showing or selecting them."""
+        artist_ids = []
+        for artist in artists:
+            artist_id = parse_spotify_uri(artist.get("uri", ""), "artist")
+            if artist_id:
+                artist_ids.append(artist_id)
+
+        if not artist_ids:
+            return artists
+
+        try:
+            details = self.api.get_multiple_artists(artist_ids)
+        except Exception:
+            # Search remains usable if a metadata endpoint is temporarily absent.
+            return artists
+
+        details_by_uri = {item.get("uri"): item for item in details if item}
+        details_by_id = {item.get("id"): item for item in details if item}
+        hydrated = []
+
+        for artist in artists:
+            artist_id = parse_spotify_uri(artist.get("uri", ""), "artist")
+            detail = details_by_uri.get(artist.get("uri")) or details_by_id.get(artist_id)
+            if not detail:
+                hydrated.append(artist)
+                continue
+
+            merged = dict(artist)
+            for field in ("name", "genres", "images", "popularity"):
+                value = detail.get(field)
+                if value not in (None, "", [], {}):
+                    merged[field] = value
+            detail_followers = detail.get("followers", {}).get("total")
+            if detail_followers is not None:
+                merged["followers"] = {"total": detail_followers}
+            hydrated.append(merged)
+
+        return hydrated
 
     def _display_search_results(self, artists: List[Dict]):
         """Display search results in a formatted list."""
@@ -495,8 +536,9 @@ class ArtistSearcher:
             table.add_column("Genres", style="dim")
 
             for idx, artist in enumerate(artists, 1):
-                followers = format_number(artist.get('followers', {}).get('total', 0))
-                genres = ", ".join(artist.get('genres', [])[:3]) or "Unknown"
+                follower_count = artist.get('followers', {}).get('total')
+                followers = format_number(follower_count) if follower_count is not None else "Unavailable"
+                genres = ", ".join(artist.get('genres', [])[:3]) or "Not provided"
                 table.add_row(
                     str(idx),
                     artist['name'],
@@ -508,8 +550,9 @@ class ArtistSearcher:
         else:
             print("\n=== Search Results ===")
             for idx, artist in enumerate(artists, 1):
-                followers = format_number(artist.get('followers', {}).get('total', 0))
-                genres = ", ".join(artist.get('genres', [])[:2]) or "Unknown"
+                follower_count = artist.get('followers', {}).get('total')
+                followers = format_number(follower_count) if follower_count is not None else "Unavailable"
+                genres = ", ".join(artist.get('genres', [])[:2]) or "Not provided"
                 print(f"  {idx}. {artist['name']} ({followers} followers) - {genres}")
             print()
 

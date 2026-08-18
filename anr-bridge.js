@@ -35,6 +35,15 @@
     let bridgeEnabled = Spicetify.LocalStorage.get(STORAGE_KEY) === "true";
 
     // NORMALIZERS
+    function normalizeFollowerCount(value) {
+        if (typeof value === "number" && Number.isFinite(value)) return value;
+        if (!value || typeof value !== "object") return null;
+        for (const candidate of [value.total, value.count, value.value]) {
+            if (typeof candidate === "number" && Number.isFinite(candidate)) return candidate;
+        }
+        return null;
+    }
+
     function normalizeSearchArtist(hit) {
         if (!hit) return null;
         const d = hit.data ?? hit;
@@ -43,7 +52,11 @@
             uri: d.uri,
             id: d.uri.split(":").pop(),
             name: d.profile?.name ?? d.name ?? "",
-            followers: { total: d.stats?.followers ?? d.followers?.total ?? d.followers ?? 0 },
+            followers: {
+                total: normalizeFollowerCount(
+                    d.stats?.followers ?? d.stats?.followersCount ?? d.followers
+                ),
+            },
             popularity: d.popularity ?? 0,
             genres: d.genres ?? [],
             images: (d.visuals?.avatarImage?.sources ?? d.images ?? []).map(s => ({
@@ -119,7 +132,11 @@
                     uri,
                     id: artist_id,
                     name: a.profile?.name ?? "",
-                    followers: { total: a.stats?.followers ?? 0 },
+                    followers: {
+                        total: normalizeFollowerCount(
+                            a.stats?.followers ?? a.stats?.followersCount ?? a.followers
+                        ),
+                    },
                     popularity: 0,
                     genres: [],
                     images: a.visuals?.avatarImage?.sources ?? [],
