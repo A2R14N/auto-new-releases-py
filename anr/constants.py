@@ -7,6 +7,9 @@ import re
 import sys
 import time
 import hashlib
+import json
+import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -90,6 +93,45 @@ SPOTIFY_SCOPES = [
 def ensure_config_dir():
     """Ensure the configuration directory exists."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def atomic_write_json(
+    path: Path,
+    data,
+    *,
+    indent: Optional[int] = 2,
+    ensure_ascii: bool = False,
+    backup: bool = False,
+) -> None:
+    """Durably write JSON through a same-directory temporary file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_name = handle.name
+            json.dump(data, handle, indent=indent, ensure_ascii=ensure_ascii)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        if backup and path.exists():
+            backup_path = path.with_suffix(path.suffix + ".bak")
+            shutil.copy2(path, backup_path)
+        os.replace(temp_name, path)
+        temp_name = None
+    finally:
+        if temp_name:
+            try:
+                Path(temp_name).unlink()
+            except FileNotFoundError:
+                pass
 
 
 def generate_id() -> str:

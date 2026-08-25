@@ -14,7 +14,7 @@ from typing import Optional, List, Dict, Any
 from .constants import (
     APP_NAME, APP_VERSION, RICH_AVAILABLE, console,
     print_success, print_error, print_warning, print_info,
-    DEFAULT_VALUES, generate_id,
+    DEFAULT_VALUES, atomic_write_json, generate_id,
 )
 from .models import Artist, Profile
 from .config import ConfigManager
@@ -96,8 +96,7 @@ class ProfileExporter:
             }
 
             file_path = self._ensure_extension(file_path)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(export_data, f, indent=2, ensure_ascii=False)
+            atomic_write_json(Path(file_path), export_data)
 
             result.success = True
             result.file_path = file_path
@@ -133,8 +132,7 @@ class ProfileExporter:
             }
 
             file_path = self._ensure_extension(file_path)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(export_data, f, indent=2, ensure_ascii=False)
+            atomic_write_json(Path(file_path), export_data)
 
             result.success = True
             result.file_path = file_path
@@ -160,8 +158,7 @@ class ProfileExporter:
             }
 
             file_path = self._ensure_extension(file_path)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(export_data, f, indent=2, ensure_ascii=False)
+            atomic_write_json(Path(file_path), export_data)
 
             result.success = True
             result.file_path = file_path

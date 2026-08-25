@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Optional, List, Dict, Tuple, Callable
 
 from .constants import (
-    RICH_AVAILABLE, console,
+    API_LIMITS, RICH_AVAILABLE, console,
     print_success, print_error, print_warning, print_info,
     parse_release_date,
 )
@@ -232,8 +232,6 @@ class PlaylistSorter:
                 result.success = True
                 result.tracks_sorted = len(sorted_uris)
                 PlaylistBackup.complete()
-                if _is_bridge(self.api):
-                    print_success(f"Sorted {len(sorted_uris):,} tracks")
             else:
                 result.error_message = "Failed to replace tracks"
 

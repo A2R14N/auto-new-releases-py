@@ -33,6 +33,7 @@
     let bridgeConnected = false;
     let toastShown = false;
     let bridgeEnabled = Spicetify.LocalStorage.get(STORAGE_KEY) === "true";
+    let sessionToken = null;
 
     // NORMALIZERS
     function normalizeFollowerCount(value) {
@@ -600,14 +601,29 @@
                 }
 
                 if (track_uris && track_uris.length > 0) {
-                    // Prepend batches from last to first. The resulting playlist
-                    // has the exact requested order, without downloading the
-                    // growing playlist again after every batch just to find an
-                    // insertion anchor.
-                    const lastBatchStart = Math.floor((track_uris.length - 1) / 100) * 100;
-                    for (let i = lastBatchStart; i >= 0; i -= 100) {
+                    // Add batches in requested order. Spicetify's empty `before`
+                    // anchor does not reliably prepend subsequent batches, so
+                    // explicitly insert each batch after the preceding one.
+                    let addedCount = 0;
+                    for (let i = 0; i < track_uris.length; i += 100) {
                         const batch = track_uris.slice(i, i + 100);
-                        await Platform.PlaylistAPI.add(uri, batch, { before: "" });
+                        if (addedCount === 0) {
+                            await Platform.PlaylistAPI.add(uri, batch, { before: "" });
+                        } else {
+                            const current = await Platform.PlaylistAPI.getContents(uri);
+                            const currentItems = current?.items || [];
+                            const anchor = currentItems[addedCount - 1];
+                            const afterUid = anchor?.uid;
+                            if (!afterUid) {
+                                throw new Error(`Could not locate insertion anchor at track ${addedCount}`);
+                            }
+                            await Platform.PlaylistAPI.add(
+                                uri,
+                                batch,
+                                { after: afterUid }
+                            );
+                        }
+                        addedCount += batch.length;
                     }
                 }
                 return { success: true };
@@ -692,7 +708,19 @@
         if (!bridgeEnabled) return;
 
         try {
+            if (!sessionToken) {
+                const status = await fetch(`${BASE_URL}/status`, {
+                    signal: AbortSignal.timeout(1000),
+                    cache: "no-store",
+                }).catch(() => null);
+                if (!status?.ok) return;
+                const session = await status.json();
+                sessionToken = session?.session_token ?? null;
+                if (!sessionToken) return;
+            }
+
             const resp = await fetch(`${BASE_URL}/request`, {
+                headers: { "X-ANR-Token": sessionToken },
                 signal: AbortSignal.timeout(1000),
                 cache: "no-store",
             }).catch(() => null);
@@ -705,6 +733,11 @@
                 return;
             }
 
+            if (resp.status === 401) {
+                sessionToken = null;
+                bridgeConnected = false;
+                return;
+            }
             if (resp.status === 204 || resp.status === 503) {
                 if (!bridgeConnected) {
                     bridgeConnected = true;
@@ -746,7 +779,10 @@
 
             await fetch(`${BASE_URL}/response`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-ANR-Token": sessionToken,
+                },
                 body: JSON.stringify({ id: request.id, result, error }),
                 signal: AbortSignal.timeout(5000),
             });
@@ -786,6 +822,7 @@
                         Spicetify.showNotification("⏸️ ANR Bridge Disabled");
                         bridgeConnected = false;
                         toastShown = false;
+                        sessionToken = null;
                     }
                 }
             ).register();

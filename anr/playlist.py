@@ -12,7 +12,7 @@ import spotipy
 
 from .constants import (
     CONFIG_DIR, API_LIMITS,
-    RICH_AVAILABLE, console,
+    RICH_AVAILABLE, console, atomic_write_json,
     print_success, print_error, print_warning, print_info,
     parse_spotify_uri, format_duration, ensure_config_dir,
 )
@@ -179,8 +179,10 @@ class PlaylistOperations:
         # ---- Bridge path ---------------------------------------------------
         if _is_bridge(self.api):
             try:
-                self.api.add_tracks_to_playlist(playlist_id, track_uris)
-                added = total
+                if self.api.add_tracks_to_playlist(playlist_id, track_uris):
+                    added = total
+                else:
+                    failed = total
             except Exception:
                 failed = total
             if progress_callback:
@@ -700,8 +702,7 @@ class PlaylistBackup:
                 'status': 'in_progress'
             }
 
-            with open(cls.BACKUP_FILE, 'w', encoding='utf-8') as f:
-                json.dump(backup, f, indent=2)
+            atomic_write_json(cls.BACKUP_FILE, backup)
 
             return True
 

@@ -5,7 +5,9 @@ Configuration management: loading, saving, and accessing config.json.
 import json
 from typing import Optional
 
-from .constants import CONFIG_FILE, ensure_config_dir, generate_id, print_warning
+from .constants import (
+    CONFIG_FILE, atomic_write_json, ensure_config_dir, generate_id, print_warning,
+)
 from .models import Artist, Profile, Config
 
 
@@ -23,7 +25,18 @@ class ConfigManager:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 return Config.from_dict(data)
-            except (json.JSONDecodeError, KeyError) as e:
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+                backup_file = CONFIG_FILE.with_suffix(CONFIG_FILE.suffix + ".bak")
+                if backup_file.exists():
+                    try:
+                        with open(backup_file, 'r', encoding='utf-8') as f:
+                            backup_data = json.load(f)
+                        recovered = Config.from_dict(backup_data)
+                        atomic_write_json(CONFIG_FILE, recovered.to_dict())
+                        print_warning(f"Config was corrupted and restored from backup: {e}")
+                        return recovered
+                    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                        pass
                 print_warning(f"Config file corrupted, creating new: {e}")
 
         return self._create_default()
@@ -47,8 +60,7 @@ class ConfigManager:
         if config:
             self.config = config
 
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(self.config.to_dict(), f, indent=2)
+        atomic_write_json(CONFIG_FILE, self.config.to_dict(), backup=True)
 
     def get_active_profile(self) -> Profile:
         """Get the currently active profile."""

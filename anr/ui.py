@@ -478,6 +478,9 @@ class ApplicationUI:
             profile = self._profile
             has = bool(profile.playlist_uri)
             app = self._app
+            configured_playlists = sum(
+                1 for item in self.config_manager.config.profiles if item.playlist_uri
+            )
 
             items = [
                 ("1", "Set Playlist", "choose from your library"),
@@ -493,9 +496,14 @@ class ApplicationUI:
                     ("7", "Analyze Playlist", "statistics"),
                     ("8", "Duplicate Playlist", "create a copy"),
                     ("9", "Remove Artist Tracks", "all tracks by one artist"),
-                    None,
-                    ("x", "Clear Playlist Setting", ""),
                 ]
+            if configured_playlists:
+                items += [
+                    None,
+                    ("a", "Sort All Profile Playlists", f"{configured_playlists} configured"),
+                ]
+            if has:
+                items += [("x", "Clear Playlist Setting", "")]
 
             _print_menu("Playlist", items)
             choice = _choice("Command ›")
@@ -567,6 +575,11 @@ class ApplicationUI:
                         else:
                             print_info(f"No tracks by {name}")
                         _wait()
+            elif choice == "a" and configured_playlists and app and app.playlist_tools:
+                if _confirm(
+                    f"Sort all {configured_playlists} configured profile playlists by release date?"
+                ):
+                    self._sort_all_profile_playlists(app)
             elif choice == "x" and has:
                 if _confirm(f"Clear playlist '{profile.playlist_name}'?"):
                     profile.playlist_uri = ""
@@ -594,6 +607,33 @@ class ApplicationUI:
                     print_error(f"Sort failed: {result.error_message}")
         except ValueError:
             print_error("Invalid input")
+        _wait()
+
+    def _sort_all_profile_playlists(self, app):
+        profiles = [
+            profile for profile in self.config_manager.config.profiles
+            if profile.playlist_uri
+        ]
+        succeeded = 0
+        total_tracks = 0
+        for index, profile in enumerate(profiles, 1):
+            print_info(
+                f"[{index}/{len(profiles)}] Sorting {profile.name}: {profile.playlist_name}"
+            )
+            result = app.playlist_tools.sorter.sort_by_release_date(profile.playlist_uri)
+            if result.success:
+                succeeded += 1
+                total_tracks += result.tracks_sorted
+                print_success(f"  Sorted {result.tracks_sorted:,} tracks")
+            else:
+                print_error(f"  Failed: {result.error_message}")
+        print()
+        if succeeded == len(profiles):
+            print_success(f"Sorted all {succeeded} playlists ({total_tracks:,} tracks)")
+        else:
+            print_warning(
+                f"Sorted {succeeded}/{len(profiles)} playlists ({total_tracks:,} tracks)"
+            )
         _wait()
 
     # ── profiles ─────────────────────────────────────────

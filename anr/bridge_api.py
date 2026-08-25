@@ -33,15 +33,22 @@ class BridgeAPI:
         Seconds to wait for the Spicetify extension to handle each request.
     """
 
-    def __init__(self, server: BridgeServer, default_timeout: float = 300.0):
+    def __init__(self, server: BridgeServer, default_timeout: float = 30.0):
         self._server = server
         self._timeout = default_timeout
 
     # Internal dispatch
-    def _call(self, method: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    def _call(
+        self,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Any:
         """Send a request through the bridge and return the result."""
         try:
-            return self._server.call(method, params, timeout=self._timeout)
+            return self._server.call(
+                method, params, timeout=self._timeout if timeout is None else timeout
+            )
         except TimeoutError as e:
             raise SpotifyAPIError(str(e)) from e
         except RuntimeError as e:
@@ -195,7 +202,7 @@ class BridgeAPI:
             return {}
 
         import json
-        from .constants import CONFIG_DIR
+        from .constants import CONFIG_DIR, atomic_write_json
 
         album_ids = [parse_spotify_uri(u, "album") for u in album_uris]
         album_ids = [aid for aid in album_ids if aid]
@@ -222,16 +229,14 @@ class BridgeAPI:
                 if pid:
                     params["playlist_id"] = pid
 
-            result = self._call("get_album_release_dates", params)
+            result = self._call("get_album_release_dates", params, timeout=300.0)
 
             # Update cache
             for aid, date in (result or {}).items():
                 local_cache[aid] = date
 
             try:
-                CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-                with open(cache_file, "w", encoding="utf-8") as f:
-                    json.dump(local_cache, f)
+                atomic_write_json(cache_file, local_cache, indent=None)
             except Exception as e:
                 print_warning(f"[BridgeAPI] Failed to save album dates cache: {e}")
         else:
@@ -307,11 +312,12 @@ class BridgeAPI:
         if not uris:
             return True
         try:
-            self._call(
+            response = self._call(
                 "remove_tracks_from_playlist",
                 {"playlist_id": playlist_id, "track_uris": uris},
+                timeout=120.0,
             )
-            return True
+            return bool((response or {}).get("success"))
         except SpotifyAPIError:
             return False
 
@@ -320,11 +326,12 @@ class BridgeAPI:
         if not track_uris:
             return True
         try:
-            self._call(
+            response = self._call(
                 "add_tracks_to_playlist",
                 {"playlist_id": playlist_id, "track_uris": track_uris},
+                timeout=120.0,
             )
-            return True
+            return bool((response or {}).get("success"))
         except SpotifyAPIError:
             return False
 
@@ -336,6 +343,7 @@ class BridgeAPI:
             response = self._call(
                 "replace_playlist_tracks",
                 {"playlist_id": playlist_id, "track_uris": track_uris},
+                timeout=300.0,
             )
             return bool((response or {}).get("success"))
         except SpotifyAPIError:

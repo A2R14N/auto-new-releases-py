@@ -68,7 +68,7 @@ def main():
     print("       spicetify apply")
     print("  3. Open Spotify — you should see a '🎸 ANR Bridge active' toast")
     print("  4. Run auto-new-releases normally:")
-    print("       python auto_new_releases.py")
+    print("       anr")
     print()
     print("The bridge is active as long as Spotify is open.")
     print("ANR will auto-detect the bridge and skip OAuth entirely.")

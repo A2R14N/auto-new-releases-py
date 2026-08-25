@@ -12,6 +12,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Adrian",
+    license="MIT",
     python_requires=">=3.9",
     packages=find_packages(exclude=["tests*"]),
     install_requires=[
@@ -35,16 +36,18 @@ setup(
         "Development Status :: 4 - Beta",
         "Environment :: Console",
         "Intended Audience :: End Users/Desktop",
-        "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
         "Topic :: Multimedia :: Sound/Audio",
     ],
     keywords="spotify music releases playlist automation",
     project_urls={
-        "Source": "https://github.com/adrian/auto-new-releases",
+        "Source": "https://github.com/A2R14N/auto-new-releases-py",
+        "Issues": "https://github.com/A2R14N/auto-new-releases-py/issues",
     },
 )

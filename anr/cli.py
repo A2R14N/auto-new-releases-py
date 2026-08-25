@@ -70,7 +70,10 @@ Examples:
     playlist_sub.add_parser("info", help="Show playlist info")
     playlist_set = playlist_sub.add_parser("set", help="Set target playlist")
     playlist_set.add_argument("uri", type=str, help="Playlist URI or URL")
-    playlist_sub.add_parser("sort", help="Sort playlist by release date")
+    playlist_sort = playlist_sub.add_parser("sort", help="Sort playlist by release date")
+    playlist_sort.add_argument(
+        "--all", "-a", action="store_true", help="Sort every configured profile playlist"
+    )
     playlist_sub.add_parser("dedupe", help="Remove duplicate tracks")
     playlist_sub.add_parser("analyze", help="Analyze playlist")
 
@@ -128,7 +131,7 @@ class CLIHandler:
 
     def cmd_check(self, args) -> int:
         if args.all:
-            return self._check_all()
+            return self._check_all(args.dry_run)
         elif args.profile:
             return self._check_profile(args.profile, args.dry_run)
         else:
@@ -146,14 +149,15 @@ class CLIHandler:
         if not profile.artists:
             self.log("No artists tracked!", "error")
             return 1
-        if dry_run:
-            self.log("Dry run - would check for new releases")
-            return 0
-
-        result = self.app.release_checker.check_profile(profile, silent=self.quiet)
+        result = self.app.release_checker.check_profile(
+            profile, silent=self.quiet, dry_run=dry_run
+        )
 
         if result.status in (CheckStatus.SUCCESS, CheckStatus.NO_NEW):
-            self.log(result.summary(), "success" if result.total_tracks_added > 0 else "info")
+            if dry_run:
+                self.log(f"Dry run: {result.total_tracks_added} tracks would be added")
+            else:
+                self.log(result.summary(), "success" if result.total_tracks_added > 0 else "info")
             return 0
         else:
             self.log(f"Check failed: {result.error_message}", "error")
@@ -177,7 +181,7 @@ class CLIHandler:
         finally:
             self.app.config_manager.config.active_profile_id = original_id
 
-    def _check_all(self) -> int:
+    def _check_all(self, dry_run: bool = False) -> int:
         from .checker import CheckStatus
 
         profiles = self.app.config_manager.config.profiles
@@ -192,10 +196,13 @@ class CLIHandler:
                 self.log("  Skipping - not configured", "warning")
                 continue
 
-            result = self.app.release_checker.check_profile(profile, silent=True)
+            result = self.app.release_checker.check_profile(
+                profile, silent=True, dry_run=dry_run
+            )
             if result.status in (CheckStatus.SUCCESS, CheckStatus.NO_NEW):
                 if result.total_tracks_added > 0:
-                    self.log(f"  Added {result.total_tracks_added} tracks", "success")
+                    verb = "Would add" if dry_run else "Added"
+                    self.log(f"  {verb} {result.total_tracks_added} tracks", "success")
                     total_added += result.total_tracks_added
                 else:
                     self.log("  No new releases")
@@ -204,7 +211,8 @@ class CLIHandler:
                 failed += 1
 
         print()
-        self.log(f"Total: {total_added} tracks added", "success")
+        suffix = "would be added" if dry_run else "added"
+        self.log(f"Total: {total_added} tracks {suffix}", "success")
         if failed > 0:
             self.log(f"{failed} profiles failed", "warning")
             return 1
@@ -304,6 +312,8 @@ class CLIHandler:
             self.log("Playlist not found", "error")
             return 1
         elif args.playlist_command == "sort":
+            if getattr(args, "all", False):
+                return self._sort_all_profile_playlists()
             profile = self.app.config_manager.get_active_profile()
             if not profile.playlist_uri:
                 self.log("No playlist configured", "error")
@@ -338,6 +348,35 @@ class CLIHandler:
         else:
             self.log("Use: playlist info|set|sort|dedupe|analyze")
             return 0
+
+    def _sort_all_profile_playlists(self) -> int:
+        profiles = [
+            profile for profile in self.app.config_manager.config.profiles
+            if profile.playlist_uri
+        ]
+        if not profiles:
+            self.log("No profile playlists are configured", "warning")
+            return 1
+
+        failed = 0
+        total_tracks = 0
+        for index, profile in enumerate(profiles, 1):
+            self.log(f"[{index}/{len(profiles)}] Sorting {profile.name}: {profile.playlist_name}")
+            result = self.app.playlist_tools.sorter.sort_by_release_date(profile.playlist_uri)
+            if result.success:
+                total_tracks += result.tracks_sorted
+                self.log(f"  Sorted {result.tracks_sorted:,} tracks", "success")
+            else:
+                failed += 1
+                self.log(f"  Failed: {result.error_message}", "error")
+
+        print()
+        self.log(
+            f"Sorted {len(profiles) - failed}/{len(profiles)} playlists "
+            f"({total_tracks:,} tracks)",
+            "success" if failed == 0 else "warning",
+        )
+        return 1 if failed else 0
 
     def cmd_profile(self, args) -> int:
         if args.profile_command == "list":
@@ -411,6 +450,9 @@ class CLIHandler:
             self.app.config_manager.config.spotify_client_id = ""
             self.app.config_manager.config.spotify_client_secret = ""
             self.app.config_manager.save()
+            config_backup = CONFIG_FILE.with_suffix(CONFIG_FILE.suffix + ".bak")
+            if config_backup.exists():
+                config_backup.unlink()
             if TOKEN_CACHE.exists():
                 TOKEN_CACHE.unlink()
             self.log("Credentials reset. Re-run to set new credentials.", "success")

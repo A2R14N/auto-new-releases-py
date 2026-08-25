@@ -37,7 +37,7 @@ ANR monitors your hand-picked artist roster, detects new singles and albums with
                 ▼                                       ▼
     ┌──────────────────────┐                ┌──────────────────────┐
     │   Spicetify Bridge   │                │   Spotify Web API    │
-    │  (Zero Rate Limits)  │                │ (Headless / Servers) │
+    │ (No Web API Quota)   │                │ (Headless / Servers) │
     └──────────────────────┘                └──────────────────────┘
 ```
 
@@ -47,8 +47,8 @@ ANR monitors your hand-picked artist roster, detects new singles and albums with
 ## ✨ Key Features
 
 - **🔄 Dual-Engine Connectivity**:
-  - **Spicetify Bridge Mode**: Hooks into the Spotify Desktop client via a lightweight local extension. Zero rate limits, no developer registration required.
-  - **Official Web API (OAuth)**: Standard Spotify Web API PKCE/OAuth with automatic token caching for headless servers, containers, and cron jobs.
+  - **Spicetify Bridge Mode**: Hooks into the Spotify Desktop client via a lightweight authenticated local extension. It avoids the public Web API quota and requires no developer registration, though Spotify's internal services may still throttle requests.
+  - **Official Web API (OAuth)**: Standard Spotify Web API OAuth using a developer client ID and secret, with automatic token caching for headless servers, containers, and cron jobs.
 - **🧠 Intelligent Filtering & Heuristics**:
   - **Remix & Variant Detection**: Automatically detect and drop remix cuts, acoustic recordings, live bootlegs, and instrumental edits.
   - **Fuzzy Duplicate Interception**: Prevent adding single releases when they later appear on a full album, and vice-versa, using track-signature deduplication (`title + primary artist`).
@@ -73,7 +73,7 @@ ANR dynamically selects the best communication channel based on your environment
 | Feature | 🎸 Spicetify Bridge (Port 7421) | 🌐 Spotify Web API (OAuth) |
 | :--- | :--- | :--- |
 | **Best For** | Desktop users, power listeners | Headless servers, Docker, VPS, Cron |
-| **Rate Limits** | **None** (internal client calls) | Standard Spotify API quotas |
+| **Rate Limits** | Avoids public Web API quotas; internal throttling may apply | Standard Spotify API quotas |
 | **Setup Overhead** | Zero developer credentials needed | Developer app ID & secret required |
 | **Client Requirement** | Spotify Desktop app open | No Spotify client needed |
 | **Data Hydration** | Live Spicetify client GraphQL / internal | Standard REST endpoints |
@@ -125,7 +125,7 @@ Choose your preferred connection method:
 <a id="spicetify-bridge"></a>
 ### Option A: Spicetify Bridge Setup *(Recommended)*
 
-The Spicetify bridge lets ANR interact with Spotify locally without needing Spotify Developer API keys.
+The Spicetify bridge lets ANR interact with Spotify locally without needing Spotify Developer API keys. Each ANR run creates an authenticated bridge session, and browser access is restricted to Spotify origins.
 
 1. **Install the bridge extension**:
    ```bash
@@ -197,7 +197,8 @@ ANR comes with a comprehensive non-interactive CLI for scripting and automation:
 | `anr check` | Check the currently active profile for new releases |
 | `anr check --all` | Run checks across all configured profiles sequentially |
 | `anr check --profile "Indie Radar"` | Check a specific profile by name |
-| `anr check --dry-run` | Preview what tracks would be added without modifying the playlist |
+| `anr check --dry-run` | Run discovery and filtering, showing what would be added without changing Spotify or local tracking history |
+| `anr check --all --dry-run` | Preview all configured profiles without mutations |
 
 ### Artist Management
 
@@ -216,6 +217,7 @@ ANR comes with a comprehensive non-interactive CLI for scripting and automation:
 | `anr playlist info` | Display active playlist statistics and metadata |
 | `anr playlist set <URI>` | Set the target playlist for the active profile |
 | `anr playlist sort` | Sort target playlist tracks (by release date, popularity, etc.) |
+| `anr playlist sort --all` | Sort every configured profile playlist by release date |
 | `anr playlist dedupe` | Scan and remove duplicate or variant tracks from the playlist |
 | `anr playlist analyze` | Output detailed breakdown of genres, release dates, and popularity |
 
@@ -313,7 +315,7 @@ Add a single-shot execution to your crontab (`crontab -e`):
 auto-new-releases/
 ├── anr/                       # Core Python package
 │   ├── api.py                 # Spotify API interface & metadata hydration
-│   ├── auth.py                # OAuth token management & PKCE
+│   ├── auth.py                # OAuth credentials and token management
 │   ├── bridge_api.py          # Spicetify local HTTP bridge adapter
 │   ├── bridge_server.py       # Embedded server handling bridge payloads
 │   ├── checker.py             # Release fetcher, gradient progress, and logic engine
@@ -330,7 +332,16 @@ auto-new-releases/
 ├── anr-bridge.js              # Spicetify Desktop Client JavaScript extension
 ├── install_bridge.py          # Automated Spicetify extension installer
 ├── setup.py                   # Package setup and entry point definition
+├── tests/                     # Safety and regression tests
 └── README.md                  # Documentation
+```
+
+### Tests
+
+Run the regression suite with the standard library test runner:
+
+```bash
+python -m unittest discover -s tests -v
 ```
 
 ---

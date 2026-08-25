@@ -223,9 +223,10 @@ class ReleaseChecker:
         self,
         profile: Profile,
         progress_callback: Optional[ProgressCallback] = None,
-        silent: bool = False
+        silent: bool = False,
+        dry_run: bool = False,
     ) -> ProfileCheckResult:
-        """Check all artists in a profile for new releases."""
+        """Check a profile, optionally previewing without persistent mutations."""
         # Import here to avoid circular
         from .tools import PlaylistTools
 
@@ -264,10 +265,14 @@ class ReleaseChecker:
                 print_info(f"Artists    {len(profile.artists)} to check")
                 print()
 
-            if not hasattr(profile, 'tracked_tracks') or profile.tracked_tracks is None:
-                profile.tracked_tracks = {}
+            tracked_tracks = getattr(profile, "tracked_tracks", None) or {}
+            tracked_releases = getattr(profile, "tracked_releases", None) or {}
 
             all_new_tracks: List[str] = []
+            candidate_releases: Set[str] = set()
+            processed_releases: Set[str] = set()
+            filtered_tracks: Set[str] = set()
+            candidate_tracks: Set[str] = set()
 
             for idx, artist in enumerate(profile.artists):
                 if progress_callback:
@@ -297,7 +302,7 @@ class ReleaseChecker:
                 recent_releases = ReleaseDateFilter.filter_by_days(all_releases, profile.days_to_check)
                 new_releases = [
                     r for r in recent_releases
-                    if r.get('uri') not in profile.tracked_releases
+                    if r.get('uri') not in tracked_releases
                 ]
 
                 result.total_releases += len(new_releases)
@@ -329,7 +334,8 @@ class ReleaseChecker:
                             print_warning(f"    Skipping album: too many tracks ({len(album_tracks)} > {profile.max_songs})")
                         result.total_tracks_filtered += len(album_tracks)
                         artist_tracks_filtered += len(album_tracks)
-                        profile.tracked_releases[release_uri] = time.time()
+                        if release_uri:
+                            processed_releases.add(release_uri)
                         continue
 
                     if profile.skip_low_popularity and album_popularity < profile.min_popularity:
@@ -337,7 +343,8 @@ class ReleaseChecker:
                             print_warning(f"    Skipping album: low popularity ({album_popularity} < {profile.min_popularity})")
                         result.total_tracks_filtered += len(album_tracks)
                         artist_tracks_filtered += len(album_tracks)
-                        profile.tracked_releases[release_uri] = time.time()
+                        if release_uri:
+                            processed_releases.add(release_uri)
                         continue
 
                     tracks_to_add = []
@@ -366,7 +373,7 @@ class ReleaseChecker:
                                 result.total_tracks_filtered += 1
                                 continue
 
-                        if track_uri in profile.tracked_tracks:
+                        if track_uri in tracked_tracks or track_uri in filtered_tracks:
                             if not silent:
                                 print(f"    [previously processed] {track_name}")
                             artist_tracks_filtered += 1
@@ -377,7 +384,7 @@ class ReleaseChecker:
                             if RemixDetector.is_remix_or_variant(track_name, release_name):
                                 if not silent:
                                     print(f"    [remix/variant] {track_name}")
-                                profile.tracked_tracks[track_uri] = time.time()
+                                filtered_tracks.add(track_uri)
                                 artist_tracks_filtered += 1
                                 result.total_tracks_filtered += 1
                                 continue
@@ -406,7 +413,7 @@ class ReleaseChecker:
                             for t in sorted_tracks[profile.max_songs_per_album:]:
                                 uri = t.get('uri')
                                 if uri:
-                                    profile.tracked_tracks[uri] = time.time()
+                                    filtered_tracks.add(uri)
                                     if not silent:
                                         print_warning(f"    [album limit] {t.get('name', 'Unknown')}")
 
@@ -415,13 +422,15 @@ class ReleaseChecker:
                             artist_tracks_filtered += filtered_count
                             result.total_tracks_filtered += filtered_count
 
-                    for track_uri in tracks_to_add:
-                        profile.tracked_tracks[track_uri] = time.time()
-
                     all_new_tracks.extend(tracks_to_add)
+                    candidate_tracks.update(tracks_to_add)
                     artist_tracks_added += len(tracks_to_add)
                     existing_uris.update(tracks_to_add)
-                    profile.tracked_releases[release_uri] = time.time()
+                    if release_uri:
+                        if tracks_to_add:
+                            candidate_releases.add(release_uri)
+                        else:
+                            processed_releases.add(release_uri)
 
                 result.artist_results.append(ArtistCheckResult(
                     artist=artist,
@@ -435,7 +444,13 @@ class ReleaseChecker:
 
             result.total_tracks_added = len(all_new_tracks)
 
-            if all_new_tracks:
+            added = 0
+            failed = 0
+            if all_new_tracks and dry_run:
+                result.total_tracks_added = len(all_new_tracks)
+                if not silent:
+                    print_info(f"Dry run: {len(all_new_tracks)} tracks would be added")
+            elif all_new_tracks:
                 if progress_callback:
                     progress_callback(CheckProgress(
                         phase='adding',
@@ -463,14 +478,47 @@ class ReleaseChecker:
                     try:
                         from .tools import PlaylistTools
                         tools = PlaylistTools(self.api, self.playlist_ops)
-                        tools.sorter.sort_by_release_date(profile.playlist_uri)
-                    except Exception:
-                        pass
+                        sort_result = tools.sorter.sort_by_release_date(profile.playlist_uri)
+                        if not sort_result.success:
+                            result.status = CheckStatus.PARTIAL
+                            message = f"Playlist sort failed: {sort_result.error_message}"
+                            result.error_message = "; ".join(
+                                part for part in (result.error_message, message) if part
+                            )
+                            print_warning(message)
+                    except Exception as sort_error:
+                        result.status = CheckStatus.PARTIAL
+                        message = f"Playlist sort failed: {sort_error}"
+                        result.error_message = "; ".join(
+                            part for part in (result.error_message, message) if part
+                        )
+                        print_warning(message)
             else:
                 result.status = CheckStatus.NO_NEW
 
-            profile.last_check = time.time()
-            self.config_manager.save()
+            if not dry_run:
+                processed_at = time.time()
+                if profile.tracked_tracks is None:
+                    profile.tracked_tracks = {}
+                if profile.tracked_releases is None:
+                    profile.tracked_releases = {}
+                for track_uri in filtered_tracks:
+                    profile.tracked_tracks[track_uri] = processed_at
+                for release_uri in processed_releases:
+                    profile.tracked_releases[release_uri] = processed_at
+
+                # Candidate releases and tracks are durable only after the
+                # complete add succeeds. On partial failure they remain
+                # eligible for retry; already-added URIs will be detected from
+                # the playlist on the next run.
+                if all_new_tracks and failed == 0 and added == len(all_new_tracks):
+                    for track_uri in candidate_tracks:
+                        profile.tracked_tracks[track_uri] = processed_at
+                    for release_uri in candidate_releases:
+                        profile.tracked_releases[release_uri] = processed_at
+
+                profile.last_check = processed_at
+                self.config_manager.save()
 
             result.duration_seconds = time.time() - start_time
 
@@ -484,8 +532,6 @@ class ReleaseChecker:
             return result
 
         except Exception as e:
-            self.config_manager.save()
-
             result.status = CheckStatus.ERROR
             result.error_message = str(e)
             result.duration_seconds = time.time() - start_time
