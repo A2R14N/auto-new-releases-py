@@ -600,22 +600,14 @@
                 }
 
                 if (track_uris && track_uris.length > 0) {
-                    let addedCount = 0;
-                    for (let i = 0; i < track_uris.length; i += 100) {
+                    // Prepend batches from last to first. The resulting playlist
+                    // has the exact requested order, without downloading the
+                    // growing playlist again after every batch just to find an
+                    // insertion anchor.
+                    const lastBatchStart = Math.floor((track_uris.length - 1) / 100) * 100;
+                    for (let i = lastBatchStart; i >= 0; i -= 100) {
                         const batch = track_uris.slice(i, i + 100);
-                        if (addedCount === 0) {
-                            await Platform.PlaylistAPI.add(uri, batch, { before: "" });
-                        } else {
-                            const cur = await Platform.PlaylistAPI.getContents(uri);
-                            const curItems = cur?.items || [];
-                            const anchor = curItems[addedCount - 1];
-                            const afterUid = anchor?.uid;
-                            await Platform.PlaylistAPI.add(
-                                uri, batch,
-                                afterUid ? { after: afterUid } : { before: "" }
-                            );
-                        }
-                        addedCount += batch.length;
+                        await Platform.PlaylistAPI.add(uri, batch, { before: "" });
                     }
                 }
                 return { success: true };

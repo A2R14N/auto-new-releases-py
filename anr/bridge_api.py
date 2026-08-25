@@ -333,11 +333,11 @@ class BridgeAPI:
         if not track_uris:
             return True
         try:
-            self._call(
+            response = self._call(
                 "replace_playlist_tracks",
                 {"playlist_id": playlist_id, "track_uris": track_uris},
             )
-            return True
+            return bool((response or {}).get("success"))
         except SpotifyAPIError:
             return False
 

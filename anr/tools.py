@@ -220,12 +220,20 @@ class PlaylistSorter:
                 sortable.sort(key=lambda t: t.get('added_at', ''), reverse=reverse)
 
             sorted_uris = [t['uri'] for t in sortable]
+            if _is_bridge(self.api):
+                batches = (len(sorted_uris) + API_LIMITS["PLAYLIST_BATCH_SIZE"] - 1) // API_LIMITS["PLAYLIST_BATCH_SIZE"]
+                print_info(
+                    f"Applying sorted order to {len(sorted_uris):,} tracks "
+                    f"({batches} remove + {batches} add batches)..."
+                )
             success = self.ops.replace_all_tracks(playlist_uri, sorted_uris, progress_callback)
 
             if success:
                 result.success = True
                 result.tracks_sorted = len(sorted_uris)
                 PlaylistBackup.complete()
+                if _is_bridge(self.api):
+                    print_success(f"Sorted {len(sorted_uris):,} tracks")
             else:
                 result.error_message = "Failed to replace tracks"
 

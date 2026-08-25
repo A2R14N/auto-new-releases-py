@@ -460,8 +460,6 @@ class ReleaseChecker:
                     if not silent:
                         print_info("Sorting playlist by release date...")
 
-                    time.sleep(2)
-
                     try:
                         from .tools import PlaylistTools
                         tools = PlaylistTools(self.api, self.playlist_ops)
@@ -695,9 +693,6 @@ class InteractiveChecker:
             result = self.checker.check_profile(profile, silent=False)
             results.append(result)
             total_added += result.total_tracks_added
-
-            if idx < len(profiles) - 1:
-                time.sleep(1)
 
         print()
         _print_section_header("Summary")

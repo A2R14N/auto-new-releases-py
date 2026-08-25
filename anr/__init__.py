@@ -249,6 +249,11 @@ class Application:
             else:
                 print_error(f"Unknown command: {command}")
                 return 1
+        except KeyboardInterrupt:
+            # Ctrl+C is a normal user-requested exit, including while waiting
+            # for bridge startup or an OAuth credential prompt.
+            print("\nCancelled.")
+            return 130
         finally:
             self._stop_bridge()
 
