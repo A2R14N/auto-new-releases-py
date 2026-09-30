@@ -4,7 +4,7 @@ from unittest.mock import patch
 from datetime import date
 
 from anr.checker import CheckStatus, ReleaseChecker
-from anr.models import Artist, Profile
+from anr.models import Artist, Profile, Config
 
 
 class FakeAPI:
@@ -36,6 +36,7 @@ class FakePlaylistOps:
 class FakeConfigManager:
     def __init__(self):
         self.save_count = 0
+        self.config = Config()
 
     def save(self):
         self.save_count += 1

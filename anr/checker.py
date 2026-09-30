@@ -235,7 +235,8 @@ class ReleaseChecker:
 
         def notify(event):
             if not dry_run:
-                notify_profile(self.api, profile, event, result)
+                notify_profile(self.api, profile, event, result,
+                               enabled=self.config_manager.config.spotify_notifications)
 
         result = ProfileCheckResult(
             profile_name=profile.name,

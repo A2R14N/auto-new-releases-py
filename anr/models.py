@@ -59,7 +59,6 @@ class Profile:
     limit_songs_per_album: bool = False
     max_songs_per_album: int = DEFAULT_VALUES["MAX_SONGS_PER_ALBUM"]
     skip_similar_duplicates: bool = False
-    spotify_notifications: bool = False
 
     def to_dict(self) -> Dict:
         data = asdict(self)
@@ -106,8 +105,7 @@ class Profile:
             'last_check', 'tracked_releases', 'tracked_tracks', 'days_to_check',
             'sort_by_date', 'skip_remixes', 'skip_low_popularity', 'min_popularity',
             'skip_long_albums', 'max_songs', 'limit_songs_per_album',
-            'max_songs_per_album', 'skip_similar_duplicates',
-            'spotify_notifications'
+            'max_songs_per_album', 'skip_similar_duplicates'
         }
         filtered = {k: v for k, v in normalized.items() if k in valid_fields}
         return cls(artists=artists, **filtered)
@@ -120,6 +118,7 @@ class Config:
     active_profile_id: Optional[str] = None
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
+    spotify_notifications: bool = False
 
     def to_dict(self) -> Dict:
         return {
@@ -127,6 +126,7 @@ class Config:
             'active_profile_id': self.active_profile_id,
             'spotify_client_id': self.spotify_client_id,
             'spotify_client_secret': self.spotify_client_secret,
+            'spotify_notifications': self.spotify_notifications,
         }
 
     @classmethod
@@ -137,4 +137,5 @@ class Config:
             active_profile_id=data.get('active_profile_id'),
             spotify_client_id=data.get('spotify_client_id', ''),
             spotify_client_secret=data.get('spotify_client_secret', ''),
+            spotify_notifications=data.get('spotify_notifications', False),
         )

@@ -716,13 +716,14 @@ class ApplicationUI:
             elif raw == "u":
                 self._toggle("skip_similar_duplicates", "Skip similar duplicates")
             elif raw == "n":
-                self._toggle("spotify_notifications", "Spotify notifications")
+                self._toggle_notifications()
             elif raw == "reset":
                 self._reset_tracking()
             else:
                 print_warning("Unknown key — see table above")
 
     def _display_settings_table(self, profile):
+        notifications = self.config_manager.config.spotify_notifications
         yn = lambda v: "[green]Yes[/]" if RICH_AVAILABLE and v else ("Yes" if v else "No")
         days = profile.days_to_check if profile.days_to_check > 0 else "All"
         release_count = len(profile.tracked_releases)
@@ -765,7 +766,7 @@ class ApplicationUI:
             setting_row("x", "Maximum songs per album", profile.max_songs_per_album)
             skip_similar = getattr(profile, "skip_similar_duplicates", False)
             setting_row("u", "Skip similar tracks", "On" if skip_similar else "Off", skip_similar)
-            setting_row("n", "Spotify notifications", "On" if profile.spotify_notifications else "Off", profile.spotify_notifications)
+            setting_row("n", "Spotify notifications (global)", "On" if notifications else "Off", notifications)
 
             footer = Text("Tracked  ", style="dim")
             footer.append(f"{release_count} releases  ·  {track_count} tracks", style="white")
@@ -791,12 +792,18 @@ class ApplicationUI:
                   f"[m] Min Popularity: {profile.min_popularity}")
             print(f"  [a] Skip Long Albums: {'Yes' if profile.skip_long_albums else 'No'}   "
                   f"[l] Limit/Album   : {'Yes' if profile.limit_songs_per_album else 'No'}")
-            print(f"  [n] Spotify notifications: {'On' if profile.spotify_notifications else 'Off'}")
+            print(f"  [n] Spotify notifications (global): {'On' if notifications else 'Off'}")
             print(f"  [x] Max Songs/Album: {profile.max_songs_per_album}   "
                   f"[u] Skip Similar  : {'Yes' if getattr(profile, 'skip_similar_duplicates', False) else 'No'}")
             print(f"\n  Tracked: {release_count} releases, {track_count} tracks — "
                   f"type 'reset' to clear")
             print()
+
+    def _toggle_notifications(self):
+        config = self.config_manager.config
+        config.spotify_notifications = not config.spotify_notifications
+        self.config_manager.save()
+        print_success(f"Spotify notifications (all profiles): {'On' if config.spotify_notifications else 'Off'}")
 
     def _toggle(self, attr: str, label: str):
         profile = self._profile

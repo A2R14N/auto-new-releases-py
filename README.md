@@ -10,11 +10,13 @@ verify the saved order, retain recovery backups after failure, and reject change
 playlist snapshots before writing.
 
 Spotify notifications are **off by default**. Open **Settings → N (Spotify
-notifications)** to toggle them on or off for the current profile. Messages and
-their six-second duration are fixed. Existing saved on/off choices are preserved.
+notifications)** to toggle them on or off **globally for all profiles**. Messages
+and their six-second duration are fixed. The switch stays the same when you change
+profiles. Older per-profile notification settings are ignored; enable the global
+switch once if you want notifications.
 Interactive and scheduled bridge checks send popups;
-dry runs do not. Popup delivery failures do not fail the check. Settings persist
-per profile and travel with profile exports.
+dry runs do not. Popup delivery failures do not fail the check. The global choice
+persists in ANR's configuration and is unaffected by profile imports or exports.
 
 Update the installed `anr-bridge.js` with the Python application, reload Spotify,
 and restart ANR. Tested with Spotify 1.3.0.277 and Spicetify 2.45.1. API references:

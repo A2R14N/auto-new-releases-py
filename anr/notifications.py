@@ -1,4 +1,4 @@
-"""Fixed Spotify notifications, controlled by a per-profile on/off switch."""
+"""Fixed Spotify notifications, controlled by one global on/off switch."""
 
 import logging
 
@@ -26,10 +26,10 @@ def render_notification(profile, event, result=None):
     return template.format_map(values)
 
 
-def notify_profile(api, profile, event, result=None):
+def notify_profile(api, profile, event, result=None, *, enabled=False):
     """Notification failures must never change release-check results."""
     from .bridge_api import BridgeAPI
-    if not isinstance(api, BridgeAPI) or not profile.spotify_notifications:
+    if not isinstance(api, BridgeAPI) or not enabled:
         return False
     try:
         message = render_notification(profile, event, result)
