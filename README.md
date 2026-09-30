@@ -1,28 +1,5 @@
 # Auto New Releases (ANR) 🎵
 
-### Faster sorting and Spotify popups
-
-Bridge sorting now uses grouped moves when they require fewer writes than a full
-rebuild. Already-sorted playlists need no writes. Moves preserve song occurrences
-and added dates. Heavily shuffled playlists can use an optimized bulk rewrite
-instead; that path resets added dates as the previous sorter did. Both paths
-verify the saved order, retain recovery backups after failure, and reject changed
-playlist snapshots before writing.
-
-Spotify notifications are **off by default**. Open **Settings → N (Spotify
-notifications)** to toggle them on or off **globally for all profiles**. Messages
-and their six-second duration are fixed. The switch stays the same when you change
-profiles. Older per-profile notification settings are ignored; enable the global
-switch once if you want notifications.
-Interactive and scheduled bridge checks send popups;
-dry runs do not. Popup delivery failures do not fail the check. The global choice
-persists in ANR's configuration and is unaffected by profile imports or exports.
-
-Update the installed `anr-bridge.js` with the Python application, reload Spotify,
-and restart ANR. Tested with Spotify 1.3.0.277 and Spicetify 2.45.1. API references:
-[Platform](https://spicetify.app/docs/development/api-wrapper/methods/platform),
-[showNotification](https://spicetify.app/docs/development/api-wrapper/functions/show-notification).
-
 <div align="center">
 
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
@@ -80,9 +57,12 @@ ANR monitors your hand-picked artist roster, detects new singles and albums with
   - Create separate tracking profiles (e.g., *Electronic Focus*, *Indie Radar*, *Heavy Rotation*), each with dedicated artist rosters, check intervals, custom lookback windows, and distinct target playlists.
 - **🛠️ Playlist Power Tools**:
   - Built-in multi-criteria playlist sorting (Release Date, Popularity, Duration, Date Added, Artist, Track Name).
+  - Faster bridge sorting with grouped moves, verified saved order, and recovery backups.
   - Deep playlist deduplication and statistical health analyzers.
 - **🎨 Modern Aurora Terminal UI**:
   - Powered by Rich with animated gradient progress bars, structured dashboards, status tables, and keyboard-driven shortcuts.
+- **🔔 Optional Spotify Notifications**:
+  - Fixed status messages with one global on/off switch for all profiles. Disabled by default.
 - **⏱️ Flexible Background Automation**:
   - Built-in daemon runner (`anr daemon`), single-pass scheduler flags (`--once`), and seamless integration with Cron, `systemd`, or Windows Task Scheduler.
 
@@ -161,6 +141,8 @@ The Spicetify bridge lets ANR interact with Spotify locally without needing Spot
    ```
 3. **Open Spotify Desktop**:
    You will see a notification toast: **`🎸 ANR Bridge active`**. ANR automatically detects the local bridge server on port `7421`.
+
+After pulling an update, rerun `python install_bridge.py` and `spicetify apply`, then restart ANR.
 
 ---
 
@@ -244,6 +226,13 @@ ANR comes with a comprehensive non-interactive CLI for scripting and automation:
 | `anr playlist dedupe` | Scan and remove duplicate or variant tracks from the playlist |
 | `anr playlist analyze` | Output detailed breakdown of genres, release dates, and popularity |
 
+In bridge mode, sorting uses grouped moves when they require fewer writes than
+rebuilding the playlist. Moves preserve song occurrences and added dates;
+already-sorted playlists need no writes. Heavily shuffled playlists can use a bulk
+rewrite instead, which resets added dates. ANR verifies the saved order and retains
+a recovery backup if sorting fails. A playlist changed since the sort began is
+rejected before writing.
+
 ### Profile & Configuration
 
 | Command | Description |
@@ -275,10 +264,22 @@ Each profile in ANR maintains independent filter rules configured via the settin
 │ [l]  Limit per album                                          On │
 │ [x]  Maximum songs per album                                   3 │
 │ [u]  Skip similar tracks                                      On │
+│ [n]  Spotify notifications (global)                          Off │
 │ ──────────────────────────────────────────────────────────────── │
 │ Tracked  284 releases  ·  412 tracks       [reset] Clear history │
 ╰──────────────────────────────────────────────────────────────────╯
 ```
+
+### Global Spotify Notifications
+
+Notifications are **off by default**. Press **N** in Settings to turn them on or off
+for **all profiles**. The choice stays the same when you switch profiles and is
+stored in ANR's configuration; profile imports and exports do not change it.
+
+Bridge checks show fixed six-second popups for check start, sorting, completion,
+no new releases, and errors. Dry runs do not send popups, and delivery failures do not
+fail release checks. Older per-profile notification flags are ignored; enable the
+global switch once if you want notifications.
 
 ### Filtering Logic Explained
 
@@ -348,6 +349,7 @@ auto-new-releases/
 │   ├── filters.py             # Regex heuristics for remixes, acoustic, & duplicates
 │   ├── importer.py            # JSON backup, export, and migration engine
 │   ├── models.py              # Dataclasses: Profile, Artist, Track, Config
+│   ├── notifications.py       # Fixed Spotify notifications & global toggle
 │   ├── playlist.py            # Playlist mutate, batch add, and track extraction
 │   ├── profile.py             # Profile lifecycle and switching logic
 │   ├── tools.py               # Playlist dedupe, sorter, and analytics tools
@@ -365,6 +367,12 @@ Run the regression suite with the standard library test runner:
 
 ```bash
 python -m unittest discover -s tests -v
+```
+
+With Node.js installed, run the bridge sorting tests:
+
+```bash
+node --test tests/test_bridge_sort.mjs
 ```
 
 ---
