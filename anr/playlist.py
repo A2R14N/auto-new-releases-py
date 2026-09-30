@@ -40,6 +40,7 @@ class PlaylistTrack:
     duration_ms: int = 0
     popularity: int = 0
     added_at: Optional[str] = None
+    uid: Optional[str] = None
 
     @classmethod
     def from_playlist_item(cls, item: Dict) -> Optional['PlaylistTrack']:
@@ -57,7 +58,8 @@ class PlaylistTrack:
             release_date=track.get('album', {}).get('release_date'),
             duration_ms=track.get('duration_ms', 0),
             popularity=track.get('popularity', 0),
-            added_at=item.get('added_at')
+            added_at=item.get('added_at'),
+            uid=item.get('uid'),
         )
 
     @property
@@ -325,6 +327,26 @@ class PlaylistOperations:
         track_uris = [t.uri for t in tracks]
         removed, _ = self.remove_tracks(playlist_uri, track_uris, progress_callback)
         return removed
+
+    def reorder_tracks(self, playlist_uri, tracks, sorted_tracks, progress_callback=None):
+        """Apply a sort to the same rows, rejecting a changed bridge snapshot."""
+        uris = [track['uri'] for track in sorted_tracks]
+        if not _is_bridge(self.api):
+            return self.replace_all_tracks(playlist_uri, uris, progress_callback)
+        playlist_id = parse_spotify_uri(playlist_uri, "playlist")
+        if not playlist_id:
+            return False
+        if progress_callback:
+            progress_callback("Applying sorted order...", 0, len(uris))
+        success = self.api.reorder_playlist_tracks(
+            playlist_id, uris,
+            [track['uid'] for track in sorted_tracks] if all(track.get('uid') for track in sorted_tracks) else [],
+            [track.uri for track in tracks],
+            [track.uid for track in tracks] if all(track.uid for track in tracks) else [],
+        )
+        if success and progress_callback:
+            progress_callback("Sorted order saved", len(uris), len(uris))
+        return success
 
     def replace_all_tracks(
         self,

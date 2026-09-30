@@ -1,6 +1,7 @@
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
+from datetime import date
 
 from anr.checker import CheckStatus, ReleaseChecker
 from anr.models import Artist, Profile
@@ -54,7 +55,7 @@ def make_checker(add_result=(2, 0), sort_by_date=False):
     checker = ReleaseChecker(FakeAPI(), ops, config)
     checker.release_fetcher = SimpleNamespace(
         get_artist_releases=lambda _uri: [
-            {"uri": "spotify:album:new", "name": "New", "release_date": "2026-08-25"}
+            {"uri": "spotify:album:new", "name": "New", "release_date": date.today().isoformat()}
         ]
     )
     return checker, profile, ops, config

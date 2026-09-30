@@ -184,6 +184,7 @@ class PlaylistSorter:
 
                 sortable.append({
                     'uri': pt.uri,
+                    'uid': pt.uid,
                     'name': pt.name,
                     'artists': pt.artists,
                     'album_name': pt.album_name,
@@ -221,19 +222,17 @@ class PlaylistSorter:
 
             sorted_uris = [t['uri'] for t in sortable]
             if _is_bridge(self.api):
-                batches = (len(sorted_uris) + API_LIMITS["PLAYLIST_BATCH_SIZE"] - 1) // API_LIMITS["PLAYLIST_BATCH_SIZE"]
                 print_info(
-                    f"Applying sorted order to {len(sorted_uris):,} tracks "
-                    f"({batches} remove + {batches} add batches)..."
+                    f"Applying sorted order to {len(sorted_uris):,} tracks..."
                 )
-            success = self.ops.replace_all_tracks(playlist_uri, sorted_uris, progress_callback)
+            success = self.ops.reorder_tracks(playlist_uri, tracks, sortable, progress_callback)
 
             if success:
                 result.success = True
                 result.tracks_sorted = len(sorted_uris)
                 PlaylistBackup.complete()
             else:
-                result.error_message = "Failed to replace tracks"
+                result.error_message = "Failed to save sorted order; backup retained"
 
             result.duration_seconds = time.time() - start_time
             return result

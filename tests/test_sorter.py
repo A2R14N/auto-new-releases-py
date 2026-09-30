@@ -36,6 +36,9 @@ class FakeSortOps:
         self.replacement = list(track_uris)
         return True
 
+    def reorder_tracks(self, uri, tracks, sorted_tracks, callback):
+        return self.replace_all_tracks(uri, [track['uri'] for track in sorted_tracks], callback)
+
 
 class PlaylistSorterTests(unittest.TestCase):
     def test_bridge_sort_progress_path_has_batch_limit_and_preserves_order(self):

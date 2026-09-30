@@ -337,14 +337,37 @@ class BridgeAPI:
 
     def replace_playlist_tracks(self, playlist_id: str, track_uris: List[str]) -> bool:
         """Replace all tracks in a playlist. Returns True on success."""
-        if not track_uris:
-            return True
         try:
             response = self._call(
                 "replace_playlist_tracks",
                 {"playlist_id": playlist_id, "track_uris": track_uris},
                 timeout=300.0,
             )
+            return bool((response or {}).get("success"))
+        except SpotifyAPIError:
+            return False
+
+    def reorder_playlist_tracks(self, playlist_id, track_uris, track_uids, expected_uris, expected_uids) -> bool:
+        try:
+            response = self._call("reorder_playlist_tracks", {
+                "playlist_id": playlist_id, "track_uris": track_uris,
+                "track_uids": track_uids, "expected_uris": expected_uris,
+                "expected_uids": expected_uids,
+            }, timeout=300.0)
+            if not (response or {}).get("success"):
+                print_warning((response or {}).get("error", "Could not save sorted order"))
+                return False
+            strategy = response.get("strategy", "move")
+            print_info(f"Order saved: {strategy}, {response.get('writes', 0)} playlist writes")
+            return True
+        except SpotifyAPIError:
+            return False
+
+    def show_notification(self, message: str, is_error: bool = False, duration_ms: int = 6000) -> bool:
+        try:
+            response = self._call("show_notification", {
+                "message": message, "is_error": is_error, "duration_ms": duration_ms,
+            }, timeout=3.0)
             return bool((response or {}).get("success"))
         except SpotifyAPIError:
             return False

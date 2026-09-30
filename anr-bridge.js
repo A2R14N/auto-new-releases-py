@@ -34,6 +34,71 @@
     let toastShown = false;
     let bridgeEnabled = Spicetify.LocalStorage.get(STORAGE_KEY) === "true";
     let sessionToken = null;
+    let polling = false;
+    let disposed = false;
+    let menuItem = null;
+    let menuRetry = null;
+    globalThis.__anrBridge?.dispose();
+
+    // Read every row, including unavailable/local entries. Never write after
+    // an incomplete read: a missing page must not silently lose songs.
+    async function playlistRows(uri) {
+        const rows = [];
+        let total = null;
+        do {
+            const page = await Platform.PlaylistAPI.getContents(uri, { offset: rows.length, limit: 500 });
+            if (!Array.isArray(page?.items) || !Number.isInteger(page.totalLength)) {
+                throw new Error("Could not read complete playlist contents");
+            }
+            if (total !== null && total !== page.totalLength) throw new Error("Playlist changed while reading");
+            total = page.totalLength;
+            if (!page.items.length && rows.length < total) throw new Error("Incomplete playlist page");
+            rows.push(...page.items);
+        } while (rows.length < total);
+        if (rows.length !== total || rows.some(row => !row.uid || !row.uri)) {
+            throw new Error("Playlist contains unreadable rows");
+        }
+        return rows;
+    }
+
+    async function verifyOrder(uri, uris, uids = null) {
+        if (typeof Platform.PlaylistAPI.resync === "function") await Platform.PlaylistAPI.resync(uri);
+        const rows = await playlistRows(uri);
+        if (rows.length !== uris.length || rows.some((row, i) => row.uri !== uris[i] || (uids && row.uid !== uids[i]))) {
+            throw new Error("Spotify did not save the requested playlist order");
+        }
+    }
+
+    async function rewritePlaylist(uri, rows, uris) {
+        for (let i = 0; i < rows.length; i += 100) {
+            await Platform.PlaylistAPI.remove(uri, rows.slice(i, i + 100).map(row => ({ uid: row.uid })));
+        }
+        // Explicit end sentinel; UID anchors must be objects in this client.
+        for (let i = 0; i < uris.length; i += 100) {
+            await Platform.PlaylistAPI.add(uri, uris.slice(i, i + 100), { after: "end" });
+        }
+        await verifyOrder(uri, uris);
+    }
+
+    function planMoves(rows, wanted) {
+        const current = rows.map(row => row.uid);
+        const moves = [];
+        for (let i = 0; i < wanted.length;) {
+            if (current[i] === wanted[i]) { i++; continue; }
+            const positions = new Map(current.map((uid, index) => [uid, index]));
+            let end = i + 1;
+            // Spotify preserves source order within a move. Only group rows
+            // whose relative order already matches the requested order.
+            while (end < wanted.length && end - i < 100 && positions.get(wanted[end]) > positions.get(wanted[end - 1])) end++;
+            const group = wanted.slice(i, end);
+            moves.push({ uids: group, location: i ? { after: { uid: wanted[i - 1] } } : { before: "start" } });
+            const selected = new Set(group);
+            const remaining = current.filter(uid => !selected.has(uid));
+            current.splice(0, current.length, ...remaining.slice(0, i), ...group, ...remaining.slice(i));
+            i = end;
+        }
+        return moves;
+    }
 
     // NORMALIZERS
     function normalizeFollowerCount(value) {
@@ -549,13 +614,12 @@
         async get_playlist_tracks({ playlist_id }) {
             const uri = `spotify:playlist:${playlist_id}`;
             try {
-                const contents = await Platform.PlaylistAPI.getContents(uri);
-                const items = contents?.items || [];
+                const items = await playlistRows(uri);
 
                 return items.map(t => {
                     if (!t?.uri) return null;
 
-                    const releaseDate = parseDateFields(t.album?.date);
+                    const releaseDate = parseDateFields(t.release || t.album?.date);
 
                     return {
                         added_at: t.addedAt || null,
@@ -590,47 +654,59 @@
         async replace_playlist_tracks({ playlist_id, track_uris }) {
             const uri = `spotify:playlist:${playlist_id}`;
             try {
-                const contents = await Platform.PlaylistAPI.getContents(uri);
-                const items = contents?.items || [];
-                const uidsToRemove = items
-                    .map(t => ({ uid: t.uid, uri: t.uri }))
-                    .filter(t => t.uid);
-
-                for (let i = 0; i < uidsToRemove.length; i += 100) {
-                    await Platform.PlaylistAPI.remove(uri, uidsToRemove.slice(i, i + 100));
-                }
-
-                if (track_uris && track_uris.length > 0) {
-                    // Add batches in requested order. Spicetify's empty `before`
-                    // anchor does not reliably prepend subsequent batches, so
-                    // explicitly insert each batch after the preceding one.
-                    let addedCount = 0;
-                    for (let i = 0; i < track_uris.length; i += 100) {
-                        const batch = track_uris.slice(i, i + 100);
-                        if (addedCount === 0) {
-                            await Platform.PlaylistAPI.add(uri, batch, { before: "" });
-                        } else {
-                            const current = await Platform.PlaylistAPI.getContents(uri);
-                            const currentItems = current?.items || [];
-                            const anchor = currentItems[addedCount - 1];
-                            const afterUid = anchor?.uid;
-                            if (!afterUid) {
-                                throw new Error(`Could not locate insertion anchor at track ${addedCount}`);
-                            }
-                            await Platform.PlaylistAPI.add(
-                                uri,
-                                batch,
-                                { after: afterUid }
-                            );
-                        }
-                        addedCount += batch.length;
-                    }
-                }
+                if (!Array.isArray(track_uris)) throw new Error("Missing track list");
+                await rewritePlaylist(uri, await playlistRows(uri), track_uris);
                 return { success: true };
             } catch (e) {
-                console.error(`[${EXTENSION_NAME}] replace_playlist_tracks error:`, e);
                 return { success: false, error: String(e) };
             }
+        },
+
+        async reorder_playlist_tracks({ playlist_id, track_uris, track_uids, expected_uris, expected_uids }) {
+            const uri = `spotify:playlist:${playlist_id}`;
+            try {
+                const rows = await playlistRows(uri);
+                if (!Array.isArray(track_uris) || !Array.isArray(expected_uris) ||
+                    rows.length !== expected_uris.length || rows.some((row, i) =>
+                        row.uri !== expected_uris[i] || (expected_uids?.length && row.uid !== expected_uids[i]))) {
+                    throw new Error("Playlist changed since sorting began; retry the sort");
+                }
+                const byUri = new Map();
+                rows.forEach(row => {
+                    if (!byUri.has(row.uri)) byUri.set(row.uri, []);
+                    byUri.get(row.uri).push(row.uid);
+                });
+                const wanted = track_uids?.length ? track_uids : track_uris.map(uri => byUri.get(uri)?.shift());
+                const rowMap = new Map(rows.map(row => [row.uid, row]));
+                if (wanted.length !== rows.length || new Set(wanted).size !== rows.length ||
+                    wanted.some((uid, i) => !uid || rowMap.get(uid)?.uri !== track_uris[i])) {
+                    throw new Error("Sorted rows do not match the playlist");
+                }
+                const moves = planMoves(rows, wanted);
+                const rewriteWrites = 2 * Math.ceil(rows.length / 100);
+                let strategy = "move";
+                if (!moves.length) strategy = "unchanged";
+                else if (typeof Platform.PlaylistAPI.move === "function" && moves.length <= rewriteWrites) {
+                    for (const move of moves) {
+                        await Platform.PlaylistAPI.move(uri, move.uids.map(uid => ({ uid })), move.location);
+                    }
+                    await verifyOrder(uri, track_uris, wanted);
+                } else {
+                    strategy = "rewrite";
+                    await rewritePlaylist(uri, rows, track_uris);
+                }
+                return { success: true, strategy, writes: strategy === "move" ? moves.length : strategy === "rewrite" ? rewriteWrites : 0 };
+            } catch (e) {
+                return { success: false, error: String(e) };
+            }
+        },
+
+        async show_notification({ message, is_error = false, duration_ms = 6000 }) {
+            if (typeof message !== "string" || !message.trim()) return { success: false };
+            // Templates and profile names are plain text, not toast HTML.
+            const safeText = message.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
+            Spicetify.showNotification(safeText, Boolean(is_error), Math.max(1000, Math.min(30000, Number(duration_ms) || 6000)));
+            return { success: true };
         },
 
         async create_playlist({ name, description = "", public: isPublic = false }) {
@@ -653,7 +729,7 @@
             if (!track_uris?.length) return { success: true };
             const uri = `spotify:playlist:${playlist_id}`;
             try {
-                await Platform.PlaylistAPI.add(uri, track_uris, { before: "" });
+                await Platform.PlaylistAPI.add(uri, track_uris, { before: "start" });
                 return { success: true };
             } catch (e) {
                 console.error(`[${EXTENSION_NAME}] add_tracks_to_playlist error:`, e);
@@ -705,7 +781,8 @@
     // POLLING
     // =========================================================================
     async function poll() {
-        if (!bridgeEnabled) return;
+        if (!bridgeEnabled || polling || disposed) return;
+        polling = true;
 
         try {
             if (!sessionToken) {
@@ -795,6 +872,8 @@
                 bridgeConnected = false;
                 console.warn(`[${EXTENSION_NAME}] Disconnected`);
             }
+        } finally {
+            polling = false;
         }
     }
 
@@ -802,13 +881,14 @@
     // MENU
     // =========================================================================
     function setupMenu() {
+        if (disposed) return;
         if (!Spicetify?.Menu?.Item || !Spicetify?.React) {
-            setTimeout(setupMenu, 300);
+            menuRetry = setTimeout(setupMenu, 300);
             return;
         }
 
         try {
-            new Spicetify.Menu.Item(
+            menuItem = new Spicetify.Menu.Item(
                 "ANR Bridge",
                 bridgeEnabled,
                 (self) => {
@@ -825,10 +905,11 @@
                         sessionToken = null;
                     }
                 }
-            ).register();
+            );
+            menuItem.register();
         } catch (e) {
             console.warn(`[${EXTENSION_NAME}] Menu not ready, retrying...`, e);
-            setTimeout(setupMenu, 500);
+            menuRetry = setTimeout(setupMenu, 500);
         }
     }
 
@@ -836,7 +917,16 @@
     // INIT
     // =========================================================================
     setupMenu();
-    setInterval(poll, POLL_INTERVAL_MS);
+    const pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+    globalThis.__anrBridge = {
+        handlers,
+        dispose() {
+            disposed = true;
+            clearInterval(pollTimer);
+            clearTimeout(menuRetry);
+            menuItem?.deregister();
+        },
+    };
     console.log(`[${EXTENSION_NAME}] Started — polling ${BASE_URL} every ${POLL_INTERVAL_MS}ms`);
 
 })();

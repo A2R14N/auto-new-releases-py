@@ -59,6 +59,7 @@ class Profile:
     limit_songs_per_album: bool = False
     max_songs_per_album: int = DEFAULT_VALUES["MAX_SONGS_PER_ALBUM"]
     skip_similar_duplicates: bool = False
+    spotify_notifications: bool = False
 
     def to_dict(self) -> Dict:
         data = asdict(self)
@@ -105,7 +106,8 @@ class Profile:
             'last_check', 'tracked_releases', 'tracked_tracks', 'days_to_check',
             'sort_by_date', 'skip_remixes', 'skip_low_popularity', 'min_popularity',
             'skip_long_albums', 'max_songs', 'limit_songs_per_album',
-            'max_songs_per_album', 'skip_similar_duplicates'
+            'max_songs_per_album', 'skip_similar_duplicates',
+            'spotify_notifications'
         }
         filtered = {k: v for k, v in normalized.items() if k in valid_fields}
         return cls(artists=artists, **filtered)

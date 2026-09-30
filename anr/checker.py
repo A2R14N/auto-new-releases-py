@@ -231,6 +231,11 @@ class ReleaseChecker:
         from .tools import PlaylistTools
 
         start_time = time.time()
+        from .notifications import notify_profile
+
+        def notify(event):
+            if not dry_run:
+                notify_profile(self.api, profile, event, result)
 
         result = ProfileCheckResult(
             profile_name=profile.name,
@@ -241,14 +246,17 @@ class ReleaseChecker:
         if not profile.playlist_uri:
             result.status = CheckStatus.ERROR
             result.error_message = "No playlist configured"
+            notify('error')
             return result
 
         if not profile.artists:
             result.status = CheckStatus.ERROR
             result.error_message = "No artists to check"
+            notify('error')
             return result
 
         try:
+            notify('start')
             if progress_callback:
                 progress_callback(CheckProgress(phase='init', message='Fetching existing playlist tracks...'))
 
@@ -469,6 +477,7 @@ class ReleaseChecker:
                     result.total_tracks_added = added
 
                 if profile.sort_by_date and added > 0:
+                    notify('sorting')
                     if progress_callback:
                         progress_callback(CheckProgress(phase='sorting', message='Sorting playlist by release date...'))
 
@@ -529,6 +538,7 @@ class ReleaseChecker:
                     message='Check complete!'
                 ))
 
+            notify(result.status.value)
             return result
 
         except Exception as e:
@@ -536,6 +546,7 @@ class ReleaseChecker:
             result.error_message = str(e)
             result.duration_seconds = time.time() - start_time
             traceback.print_exc()
+            notify('error')
             return result
 
     def check_all_profiles(

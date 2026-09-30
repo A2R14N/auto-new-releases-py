@@ -1,5 +1,26 @@
 # Auto New Releases (ANR) 🎵
 
+### Faster sorting and Spotify popups
+
+Bridge sorting now uses grouped moves when they require fewer writes than a full
+rebuild. Already-sorted playlists need no writes. Moves preserve song occurrences
+and added dates. Heavily shuffled playlists can use an optimized bulk rewrite
+instead; that path resets added dates as the previous sorter did. Both paths
+verify the saved order, retain recovery backups after failure, and reject changed
+playlist snapshots before writing.
+
+Spotify notifications are **off by default**. Open **Settings → N (Spotify
+notifications)** to toggle them on or off for the current profile. Messages and
+their six-second duration are fixed. Existing saved on/off choices are preserved.
+Interactive and scheduled bridge checks send popups;
+dry runs do not. Popup delivery failures do not fail the check. Settings persist
+per profile and travel with profile exports.
+
+Update the installed `anr-bridge.js` with the Python application, reload Spotify,
+and restart ANR. Tested with Spotify 1.3.0.277 and Spicetify 2.45.1. API references:
+[Platform](https://spicetify.app/docs/development/api-wrapper/methods/platform),
+[showNotification](https://spicetify.app/docs/development/api-wrapper/functions/show-notification).
+
 <div align="center">
 
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)

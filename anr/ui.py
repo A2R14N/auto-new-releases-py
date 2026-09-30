@@ -715,6 +715,8 @@ class ApplicationUI:
                 self._change_int_setting("max_songs_per_album", "Max songs per album", 1, 50)
             elif raw == "u":
                 self._toggle("skip_similar_duplicates", "Skip similar duplicates")
+            elif raw == "n":
+                self._toggle("spotify_notifications", "Spotify notifications")
             elif raw == "reset":
                 self._reset_tracking()
             else:
@@ -763,6 +765,7 @@ class ApplicationUI:
             setting_row("x", "Maximum songs per album", profile.max_songs_per_album)
             skip_similar = getattr(profile, "skip_similar_duplicates", False)
             setting_row("u", "Skip similar tracks", "On" if skip_similar else "Off", skip_similar)
+            setting_row("n", "Spotify notifications", "On" if profile.spotify_notifications else "Off", profile.spotify_notifications)
 
             footer = Text("Tracked  ", style="dim")
             footer.append(f"{release_count} releases  ·  {track_count} tracks", style="white")
@@ -788,6 +791,7 @@ class ApplicationUI:
                   f"[m] Min Popularity: {profile.min_popularity}")
             print(f"  [a] Skip Long Albums: {'Yes' if profile.skip_long_albums else 'No'}   "
                   f"[l] Limit/Album   : {'Yes' if profile.limit_songs_per_album else 'No'}")
+            print(f"  [n] Spotify notifications: {'On' if profile.spotify_notifications else 'Off'}")
             print(f"  [x] Max Songs/Album: {profile.max_songs_per_album}   "
                   f"[u] Skip Similar  : {'Yes' if getattr(profile, 'skip_similar_duplicates', False) else 'No'}")
             print(f"\n  Tracked: {release_count} releases, {track_count} tracks — "
