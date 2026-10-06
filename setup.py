@@ -7,7 +7,7 @@ long_description = (here / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="auto-new-releases",
-    version="2.0.0",
+    version="2.1.0",
     description="Automatically track new Spotify releases from your favourite artists and add them to a playlist",
     long_description=long_description,
     long_description_content_type="text/markdown",
