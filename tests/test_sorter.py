@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from anr.playlist import PlaylistTrack
 from anr.tools import PlaylistSorter
@@ -43,7 +43,12 @@ class FakeSortOps:
 class PlaylistSorterTests(unittest.TestCase):
     def test_bridge_sort_progress_path_has_batch_limit_and_preserves_order(self):
         ops = FakeSortOps()
-        sorter = PlaylistSorter(object(), ops)
+        api = Mock()
+        api.get_album_release_dates.return_value = {
+            'spotify:album:old': '2025-01-01',
+            'spotify:album:new': '2026-01-01',
+        }
+        sorter = PlaylistSorter(api, ops)
 
         with patch("anr.tools._is_bridge", return_value=True):
             result = sorter.sort_playlist(

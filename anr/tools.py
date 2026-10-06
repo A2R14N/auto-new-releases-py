@@ -111,31 +111,24 @@ class PlaylistSorter:
                     result.error_message = "Could not create recovery backup; playlist unchanged"
                     return result
 
-            # ----------------------------------------------------------------
-            # Build sortable list.
-            # For RELEASE_DATE + bridge: use the fast two-phase approach
-            #   Phase 1: artist discography (bulk, ~455 calls for ~1800 albums)
-            #   Phase 2: direct album lookup for remainder (~200 calls)
-            #   Total: ~660 calls, ~19s, zero rate limit waits
-            # For other criteria or non-bridge: use get_multiple_tracks.
-            # ----------------------------------------------------------------
+            # Resolve album dates through the cached bridge lookup. Playlist
+            # row dates may reflect a reissue instead of the album's date.
             track_map: Dict = {}
             album_date_map: Dict[str, Optional[str]] = {}
+            bridge_release_sort = criteria == SortCriteria.RELEASE_DATE and _is_bridge(self.api)
 
-            if criteria == SortCriteria.RELEASE_DATE and _is_bridge(self.api):
+            if bridge_release_sort:
                 if progress_callback:
                     progress_callback("Fetching album release dates", 0, 0)
 
-                # Collect unique album URIs, seeding with dates already known
+                # Do not seed from playlist row dates: Spotify can report
+                # 2026 here while the same album is dated 2021 by getAlbum.
                 unique_album_uris = []
                 seen_albums = set()
                 for pt in tracks:
                     if pt.album_uri and pt.album_uri not in seen_albums:
                         seen_albums.add(pt.album_uri)
-                        if pt.release_date:
-                            album_date_map[pt.album_uri] = pt.release_date
-                        else:
-                            unique_album_uris.append(pt.album_uri)
+                        unique_album_uris.append(pt.album_uri)
 
                 if unique_album_uris:
                     try:
@@ -150,7 +143,8 @@ class PlaylistSorter:
                             f"({len(album_date_map)} total, {len(tracks)} tracks)"
                         )
                     except Exception as e:
-                        print_warning(f"Album date fetch failed ({e}), falling back to track lookup")
+                        result.error_message = f"Could not resolve album release dates: {e}; playlist unchanged"
+                        return result
 
                 if album_date_map:
                     print_detail(f"Have dates for {len(album_date_map):,} unique albums")
@@ -173,14 +167,10 @@ class PlaylistSorter:
             for pt in tracks:
                 full = track_map.get(pt.uri, {})
 
-                # Release date: album map > pt.release_date > full track data
-                if album_date_map:
-                    release_date = (
-                        album_date_map.get(pt.album_uri)
-                        or pt.release_date
-                        or (full.get('album') or {}).get('release_date')
-                        or ''
-                    )
+                if bridge_release_sort:
+                    # An unresolved album stays undated; an unverified row
+                    # date must never promote an old recording to the top.
+                    release_date = album_date_map.get(pt.album_uri) or ''
                 else:
                     full_release_date = (full.get('album') or {}).get('release_date')
                     release_date = full_release_date or pt.release_date or ''
