@@ -14,6 +14,7 @@ from .constants import (
     print_success, print_error, print_warning, print_info,
     parse_release_date,
 )
+from .output import print_activity, print_detail
 from .api import SpotifyAPI
 from .playlist import PlaylistOperations, PlaylistTrack, PlaylistBackup, _is_bridge
 from .filters import DuplicateDetector, DuplicateInfo
@@ -94,7 +95,7 @@ class PlaylistSorter:
             playlist_name = playlist.get('name', 'Unknown')
 
             if progress_callback:
-                progress_callback("Fetching tracks...", 0, 0)
+                progress_callback("Fetching tracks", 0, 0)
 
             tracks = self.ops.get_playlist_tracks(playlist_uri)
 
@@ -121,7 +122,7 @@ class PlaylistSorter:
 
             if criteria == SortCriteria.RELEASE_DATE and _is_bridge(self.api):
                 if progress_callback:
-                    progress_callback("Fetching album release dates...", 0, 0)
+                    progress_callback("Fetching album release dates", 0, 0)
 
                 # Collect unique album URIs, seeding with dates already known
                 unique_album_uris = []
@@ -142,7 +143,7 @@ class PlaylistSorter:
                             unique_album_uris, playlist_uri=playlist_uri
                         )
                         album_date_map.update(date_map)
-                        print_info(
+                        print_detail(
                             f"Fetched {len(date_map)}/{len(unique_album_uris)} album dates "
                             f"({len(album_date_map)} total, {len(tracks)} tracks)"
                         )
@@ -150,7 +151,7 @@ class PlaylistSorter:
                         print_warning(f"Album date fetch failed ({e}), falling back to track lookup")
 
                 if album_date_map:
-                    print_info(f"Have dates for {len(album_date_map)} unique albums")
+                    print_detail(f"Have dates for {len(album_date_map):,} unique albums")
 
             else:
                 # Non-release-date sort or non-bridge: use full track details
@@ -158,6 +159,9 @@ class PlaylistSorter:
                 full_tracks = self.api.get_multiple_tracks(track_uris)
                 if not full_tracks:
                     result.error_message = "Could not fetch track details"
+                    return result
+                if criteria == SortCriteria.POPULARITY and any(t.get('popularity') is None for t in full_tracks):
+                    result.error_message = "Spotify did not provide track popularity. Choose another sorting option."
                     return result
                 track_map = {t.get('uri'): t for t in full_tracks if t}
 
@@ -222,8 +226,8 @@ class PlaylistSorter:
 
             sorted_uris = [t['uri'] for t in sortable]
             if _is_bridge(self.api):
-                print_info(
-                    f"Applying sorted order to {len(sorted_uris):,} tracks..."
+                print_activity(
+                    f"Applying sorted order to {len(sorted_uris):,} tracks"
                 )
             success = self.ops.reorder_tracks(playlist_uri, tracks, sortable, progress_callback)
 
@@ -287,12 +291,12 @@ class PlaylistDeduplicator:
 
     def find_duplicates(self, playlist_uri: str, include_similar: bool = False, progress_callback=None):
         if progress_callback:
-            progress_callback("Fetching tracks...")
+            progress_callback("Fetching tracks")
         tracks = self.ops.get_playlist_tracks(playlist_uri)
         if not tracks:
             return [], []
         if progress_callback:
-            progress_callback(f"Analyzing {len(tracks)} tracks...")
+            progress_callback(f"Analyzing {len(tracks)} tracks")
         duplicates, _ = DuplicateDetector.find_duplicates(tracks, include_similar)
         return duplicates, tracks
 
@@ -515,7 +519,7 @@ class PlaylistAnalyzer:
         return stats
 
     def display_analysis(self, playlist_uri: str, detailed: bool = False):
-        print_info("Analyzing playlist...")
+        print_info("Analyzing playlist")
         stats = self.analyze(playlist_uri, detailed)
 
         if 'error' in stats:
@@ -601,7 +605,7 @@ class ArtistTrackRemover:
                     tracks_to_remove.append(track.uri)
 
             if progress_callback and idx % 10 == 0:
-                progress_callback("Finding artist tracks...", idx, len(tracks))
+                progress_callback("Finding artist tracks", idx, len(tracks))
 
         if not tracks_to_remove:
             print_info(f"No tracks by {artist_name} found in playlist")

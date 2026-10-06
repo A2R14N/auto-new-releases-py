@@ -16,7 +16,7 @@ setup(
     python_requires=">=3.9",
     packages=find_packages(exclude=["tests*"]),
     install_requires=[
-        "spotipy>=2.23.0",
+        "spotipy>=2.26.0",
         "requests>=2.28.0",
     ],
     extras_require={

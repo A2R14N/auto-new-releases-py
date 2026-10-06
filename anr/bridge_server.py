@@ -20,11 +20,12 @@ import json
 import hmac
 import secrets
 import threading
+import time
 import uuid
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from queue import Empty, Queue
 from typing import Any, Dict, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 BRIDGE_PORT = 7421
 REQUEST_TIMEOUT = 30  # seconds to wait for extension to fulfil a request
@@ -153,22 +154,32 @@ class _BridgeHandler(BaseHTTPRequestHandler):
                 "session_token": srv.session_token,
             })
 
-        elif self.path == "/request":
+        elif urlparse(self.path).path == "/request":
             if not self._authorized(srv):
                 self._send_empty(401)
                 return
             # Signal that extension is alive
             srv._mark_extension_alive()
 
+            # Optional bounded long poll avoids throttled client timers while
+            # keeping old clients' immediate /request behavior unchanged.
+            try:
+                wait_ms = int(parse_qs(urlparse(self.path).query).get("wait_ms", ["0"])[0])
+            except (ValueError, IndexError):
+                wait_ms = 0
+            deadline = time.monotonic() + max(0, min(500, wait_ms)) / 1000
+
             while True:
                 try:
-                    req: _PendingRequest = srv._request_queue.get_nowait()
+                    remaining = max(0, deadline - time.monotonic())
+                    req: _PendingRequest = srv._request_queue.get(timeout=remaining)
                 except Empty:
                     self._send_empty(204)
                     break
-                if req.cancelled:
-                    continue
-                srv._pending[req.id] = req
+                with srv._lock:
+                    if req.cancelled:
+                        continue
+                    srv._pending[req.id] = req
                 self._send_json(req.to_dict())
                 break
 
@@ -191,8 +202,9 @@ class _BridgeHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
                 req_id = data.get("id")
-                if req_id and req_id in srv._pending:
-                    req = srv._pending.pop(req_id)
+                with srv._lock:
+                    req = srv._pending.pop(req_id, None) if req_id else None
+                if req is not None:
                     req.resolve(data.get("result"), data.get("error"))
                 self._send_empty(200)
             except Exception as e:
@@ -236,7 +248,7 @@ class BridgeServer:
         if self._server is not None:
             return  # already running
 
-        self._server = HTTPServer(("127.0.0.1", self.port), _BridgeHandler)
+        self._server = ThreadingHTTPServer(("127.0.0.1", self.port), _BridgeHandler)
         self.port = self._server.server_port
         self._server._bridge = self  # back-reference for the handler
 
@@ -295,6 +307,7 @@ class BridgeServer:
         try:
             return req.wait(timeout=timeout)
         except TimeoutError:
-            req.cancel()
-            self._pending.pop(req.id, None)
+            with self._lock:
+                req.cancel()
+                self._pending.pop(req.id, None)
             raise

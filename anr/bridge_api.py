@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 from .api import SpotifyAPIError
 from .bridge_server import BridgeServer
 from .constants import parse_spotify_uri, print_warning, print_info
+from .output import print_complete, print_detail
 from .models import Artist
 
 
@@ -110,6 +111,28 @@ class BridgeAPI:
             "get_artist_top_tracks", {"artist_id": artist_id, "country": country}
         ) or []
 
+    def get_artist_albums_batch(
+        self, artist_uris: List[str], include_groups: str = "album,single"
+    ) -> Dict[str, Dict]:
+        """Read a small artist batch with individual success/error results."""
+        artist_ids = [parse_spotify_uri(uri, "artist") for uri in artist_uris]
+        if not artist_ids or not all(artist_ids):
+            raise SpotifyAPIError("Invalid artist batch")
+        result = self._call(
+            "get_artist_albums_batch",
+            {"artist_ids": artist_ids, "include_groups": include_groups},
+        )
+        if not isinstance(result, dict):
+            raise SpotifyAPIError("Invalid artist batch response")
+        for uri in artist_uris:
+            entry = result.get(uri)
+            if (not isinstance(entry, dict) or not isinstance(entry.get("releases"), list)
+                    or "error" not in entry
+                    or (entry["error"] is not None and
+                        (not isinstance(entry["error"], str) or not entry["error"]))):
+                raise SpotifyAPIError("Incomplete artist batch response")
+        return result
+
     def artist_to_model(self, artist_data: Dict) -> Artist:
         """Convert raw Spotify artist dict to local Artist model (no bridge call)."""
         return Artist(
@@ -171,7 +194,7 @@ class BridgeAPI:
                     all_results.extend(r for r in results if r)
 
                     if had_429:
-                        print_warning(f"[BridgeAPI] 429 detected in album batch, waiting {backoff:.0f}s...")
+                        print_warning(f"[BridgeAPI] 429 detected in album batch, waiting {backoff:.0f}s")
                         time.sleep(backoff)
                         backoff = min(backoff * 2, MAX_BACKOFF)
                     else:
@@ -185,7 +208,7 @@ class BridgeAPI:
                 except Exception as e:
                     msg = str(e)
                     if "429" in msg or "too many" in msg.lower():
-                        print_warning(f"[BridgeAPI] 429 on batch, waiting {backoff:.0f}s...")
+                        print_warning(f"[BridgeAPI] 429 on batch, waiting {backoff:.0f}s")
                         time.sleep(backoff)
                         backoff = min(backoff * 2, MAX_BACKOFF)
                     else:
@@ -222,7 +245,7 @@ class BridgeAPI:
         needed_ids = [aid for aid in album_ids if aid not in local_cache]
 
         if needed_ids:
-            print_info(f"Fetching release dates for {len(needed_ids)} new albums (already have {len(album_ids) - len(needed_ids)} cached)...")
+            print_detail(f"Fetching release dates for {len(needed_ids)} new albums (already have {len(album_ids) - len(needed_ids)} cached)")
             params: Dict[str, Any] = {"album_ids": needed_ids}
             if playlist_uri:
                 pid = parse_spotify_uri(playlist_uri, "playlist")
@@ -240,7 +263,7 @@ class BridgeAPI:
             except Exception as e:
                 print_warning(f"[BridgeAPI] Failed to save album dates cache: {e}")
         else:
-            print_info(f"Using cached release dates for all {len(album_ids)} albums.")
+            print_detail(f"Using cached release dates for all {len(album_ids)} albums.")
 
         date_map: Dict[str, Optional[str]] = {}
         for aid in album_ids:
@@ -358,7 +381,7 @@ class BridgeAPI:
                 print_warning((response or {}).get("error", "Could not save sorted order"))
                 return False
             strategy = response.get("strategy", "move")
-            print_info(f"Order saved: {strategy}, {response.get('writes', 0)} playlist writes")
+            print_complete(f"Order saved: {strategy}, {response.get('writes', 0)} playlist writes")
             return True
         except SpotifyAPIError:
             return False

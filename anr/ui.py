@@ -210,7 +210,7 @@ def _confirm(message: str, default: bool = False) -> bool:
 
 
 def _wait():
-    input("\nPress Enter to continue...")
+    input("\nPress Enter to continue")
 
 
 def _print_menu(title: str, items: list, show_back: bool = True):
@@ -458,7 +458,7 @@ class ApplicationUI:
         if not app:
             return
         profile = self._profile
-        print_info(f"Refreshing {len(profile.artists)} artists...")
+        print_info(f"Refreshing {len(profile.artists)} artists")
         updated = 0
         for i, artist in enumerate(profile.artists):
             print(f"  [{i+1}/{len(profile.artists)}] {artist.name}")

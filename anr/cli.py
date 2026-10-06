@@ -185,7 +185,7 @@ class CLIHandler:
         from .checker import CheckStatus
 
         profiles = self.app.config_manager.config.profiles
-        self.log(f"Checking {len(profiles)} profiles...")
+        self.log(f"Checking {len(profiles)} profiles")
 
         total_added = 0
         failed = 0
@@ -493,7 +493,7 @@ class Daemon:
     def stop(self):
         self.running = False
         self._stop_event.set()
-        print_info("Daemon stopping...")
+        print_info("Daemon stopping")
 
     def _handle_signal(self, signum, frame):
         self.stop()
@@ -504,7 +504,7 @@ class Daemon:
                 due_profiles = self.app.scheduled_checker.get_profiles_due()
 
                 if due_profiles:
-                    print_info(f"Checking {len(due_profiles)} due profiles...")
+                    print_info(f"Checking {len(due_profiles)} due profiles")
                     results = self.app.scheduled_checker.check_due_profiles(silent=False)
 
                     for result in results:
@@ -513,7 +513,7 @@ class Daemon:
 
             sleep_seconds = self.interval_override * 60 if self.interval_override > 0 else 300
             next_check = time.time() + sleep_seconds
-            print_info(f"Next check in {sleep_seconds // 60} minutes...")
+            print_info(f"Next check in {sleep_seconds // 60} minutes")
 
             while self.running and time.time() < next_check:
                 self._stop_event.wait(timeout=30)

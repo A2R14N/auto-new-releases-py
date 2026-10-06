@@ -22,7 +22,7 @@
 
     const BRIDGE_PORT = 7421;
     const POLL_INTERVAL_MS = 500;
-    const BASE_URL = `http://localhost:${BRIDGE_PORT}`;
+    const BASE_URL = `http://127.0.0.1:${BRIDGE_PORT}`;
     const EXTENSION_NAME = "ANR Bridge";
     const STORAGE_KEY = "anr-bridge:enabled";
 
@@ -38,6 +38,9 @@
     let disposed = false;
     let menuItem = null;
     let menuRetry = null;
+    let pollTimer = null;
+    let activeUntil = 0;
+    let supportsLongPoll = true;
     globalThis.__anrBridge?.dispose();
 
     // Read every row, including unavailable/local entries. Never write after
@@ -80,7 +83,7 @@
         await verifyOrder(uri, uris);
     }
 
-    function planMoves(rows, wanted) {
+    function planMoves(rows, wanted, maxMoves) {
         const current = rows.map(row => row.uid);
         const moves = [];
         for (let i = 0; i < wanted.length;) {
@@ -92,6 +95,8 @@
             while (end < wanted.length && end - i < 100 && positions.get(wanted[end]) > positions.get(wanted[end - 1])) end++;
             const group = wanted.slice(i, end);
             moves.push({ uids: group, location: i ? { after: { uid: wanted[i - 1] } } : { before: "start" } });
+            // Once rewriting is cheaper, this plan will never be executed.
+            if (moves.length > maxMoves) return null;
             const selected = new Set(group);
             const remaining = current.filter(uid => !selected.has(uid));
             current.splice(0, current.length, ...remaining.slice(0, i), ...group, ...remaining.slice(i));
@@ -140,6 +145,105 @@
         return iso.slice(0, 10) || (y !== "0000" ? `${y}-${m}-${day}` : null);
     }
 
+    let artistDefinitionPromise = null;
+    async function graphqlRequest(name, variables) {
+        const graphql = Spicetify.GraphQL;
+        if (typeof graphql?.Request !== "function") throw new Error("Spotify GraphQL is not ready");
+        let definition = graphql.Definitions?.[name];
+        if (!definition && name === "queryArtistDiscographyAll") {
+            // Spotify defines this query in its lazy artist-route bundle.
+            // Read its metadata from the installed client without navigating,
+            // executing the bundle, or pinning a version-specific query hash.
+            if (!artistDefinitionPromise) {
+                artistDefinitionPromise = (async () => {
+                    const response = await fetch(new URL("xpui-routes-artist.js", document.baseURI), {
+                        signal: AbortSignal.timeout(5000),
+                    });
+                    if (!response.ok) throw new Error("Could not load Spotify artist query definitions");
+                    const source = await response.text();
+                    const match = source.match(/new\s+[\w$.]+\(\s*["']queryArtistDiscographyAll["']\s*,\s*["']query["']\s*,\s*["']([a-f0-9]{64})["']/);
+                    if (!match) throw new Error("Spotify artist query definition was not found in this client");
+                    return { name, operation: "query", sha256Hash: match[1], value: null };
+                })().catch(error => {
+                    artistDefinitionPromise = null;
+                    throw error;
+                });
+            }
+            definition = await artistDefinitionPromise;
+        }
+        if (!definition) throw new Error(`Spotify query '${name}' is not available in this client`);
+        return graphql.Request(definition, variables);
+    }
+
+    async function fetchArtistAlbums(artist_id, include_groups = "album,single") {
+        const uri = `spotify:artist:${artist_id}`;
+        const groups = new Set(include_groups.toLowerCase().split(",").map(s => s.trim()));
+        const res = await graphqlRequest(
+            "queryArtistDiscographyAll",
+            { uri, offset: 0, limit: 100 }
+        );
+        const items = res?.data?.artistUnion?.discography?.all?.items;
+        if (!Array.isArray(items)) throw new Error("Could not read artist releases");
+        return items.map(item => {
+            const rel = item.releases?.items?.[0];
+            if (!rel) return null;
+            const type = (rel.type || "").toLowerCase();
+            if (groups.size > 0 && !groups.has(type)) return null;
+            return {
+                uri: rel.uri,
+                id: rel.uri.split(":").pop(),
+                name: rel.name || "",
+                album_type: type,
+                release_date: parseDateFields(rel.date),
+                total_tracks: rel.tracks?.totalCount || 0,
+                artists: [{ uri, id: artist_id }],
+                images: rel.coverArt?.sources || [],
+            };
+        }).filter(Boolean);
+    }
+
+    async function fetchAlbum(uri, offset = 0) {
+        const res = await graphqlRequest(
+            "getAlbum",
+            { uri, locale: "", offset, limit: 100 }
+        );
+        const album = res?.data?.albumUnion;
+        if (!Array.isArray(album?.tracksV2?.items) || !Number.isInteger(album.tracksV2.totalCount) || album.tracksV2.totalCount < 0) {
+            throw new Error("Could not read album tracks");
+        }
+        return album;
+    }
+
+    async function collectAlbumTracks(uri, album) {
+        const total = album.tracksV2.totalCount;
+        const items = [...album.tracksV2.items];
+        while (items.length < total) {
+            const page = await fetchAlbum(uri, items.length);
+            if (page.tracksV2.totalCount !== total || !page.tracksV2.items.length) {
+                throw new Error("Incomplete or changed album tracks");
+            }
+            items.push(...page.tracksV2.items);
+        }
+        if (items.length !== total) throw new Error("Incomplete album tracks");
+        return items.map(item => {
+            const t = item.track;
+            if (!t) return null;
+            return {
+                uri: t.uri,
+                id: t.uri.split(":").pop(),
+                name: t.name || "",
+                duration_ms: t.duration?.totalMilliseconds || 0,
+                track_number: t.trackNumber || 1,
+                disc_number: t.discNumber || 1,
+                artists: (t.artists?.items || []).map(a => ({
+                    name: a.profile?.name || "",
+                    uri: a.uri || "",
+                    id: (a.uri || "").split(":").pop(),
+                })),
+            };
+        }).filter(Boolean);
+    }
+
     // REQUEST HANDLERS
     const handlers = {
 
@@ -161,8 +265,8 @@
         // =====================================================================
         async search_artists({ query, limit = 10 }) {
             try {
-                const res = await Spicetify.GraphQL.Request(
-                    Spicetify.GraphQL.Definitions.searchSuggestions,
+                const res = await graphqlRequest(
+                    "searchSuggestions",
                     {
                         query,
                         limit,
@@ -187,8 +291,8 @@
         async get_artist({ artist_id }) {
             const uri = `spotify:artist:${artist_id}`;
             try {
-                const res = await Spicetify.GraphQL.Request(
-                    Spicetify.GraphQL.Definitions.queryArtistOverview,
+                const res = await graphqlRequest(
+                    "queryArtistOverview",
                     { uri, locale: "" }
                 );
                 const a = res.data.artistUnion;
@@ -222,48 +326,36 @@
         },
 
         async get_artist_albums({ artist_id, include_groups = "album,single" }) {
-            const uri = `spotify:artist:${artist_id}`;
-            const groups = new Set(include_groups.toLowerCase().split(",").map(s => s.trim()));
-
             try {
-                const res = await Spicetify.GraphQL.Request(
-                    Spicetify.GraphQL.Definitions.queryArtistDiscographyAll,
-                    { uri, offset: 0, limit: 100 }
-                );
-
-                const items = res?.data?.artistUnion?.discography?.all?.items || [];
-
-                return items.map(item => {
-                    const rel = item.releases?.items?.[0];
-                    if (!rel) return null;
-
-                    const type = (rel.type || "").toLowerCase();
-                    if (groups.size > 0 && !groups.has(type)) return null;
-
-                    const releaseDate = parseDateFields(rel.date);
-
-                    return {
-                        uri: rel.uri,
-                        id: rel.uri.split(":").pop(),
-                        name: rel.name || "",
-                        album_type: type,
-                        release_date: releaseDate,
-                        total_tracks: rel.tracks?.totalCount || 0,
-                        artists: [{ uri, id: artist_id }],
-                        images: rel.coverArt?.sources || [],
-                    };
-                }).filter(Boolean);
+                return await fetchArtistAlbums(artist_id, include_groups);
             } catch (e) {
                 console.error(`[${EXTENSION_NAME}] get_artist_albums error:`, e);
-                return [];
+                throw e;
             }
+        },
+
+        async get_artist_albums_batch({ artist_ids, include_groups = "album,single" }) {
+            if (!Array.isArray(artist_ids)) throw new Error("Missing artist IDs");
+            const results = {};
+            // Bound concurrency even if a caller supplies a larger batch.
+            for (let i = 0; i < artist_ids.length; i += 4) {
+                await Promise.all(artist_ids.slice(i, i + 4).map(async id => {
+                    const uri = `spotify:artist:${id}`;
+                    try {
+                        results[uri] = { releases: await fetchArtistAlbums(id, include_groups), error: null };
+                    } catch (e) {
+                        results[uri] = { releases: [], error: e.message || String(e) };
+                    }
+                }));
+            }
+            return results;
         },
 
         async get_artist_top_tracks({ artist_id }) {
             const uri = `spotify:artist:${artist_id}`;
             try {
-                const res = await Spicetify.GraphQL.Request(
-                    Spicetify.GraphQL.Definitions.queryArtistOverview,
+                const res = await graphqlRequest(
+                    "queryArtistOverview",
                     { uri, locale: "" }
                 );
                 const items = res?.data?.artistUnion?.discography?.topTracks?.items || [];
@@ -291,13 +383,7 @@
             const id = (album_id || "").split(":").pop();
             const uri = `spotify:album:${id}`;
             try {
-                const res = await Spicetify.GraphQL.Request(
-                    Spicetify.GraphQL.Definitions.getAlbum,
-                    { uri, locale: "", offset: 0, limit: 50 }
-                );
-
-                const album = res?.data?.albumUnion;
-                if (!album) return { uri, id };
+                const album = await fetchAlbum(uri);
 
                 const releaseDate = parseDateFields(album.date);
 
@@ -313,11 +399,11 @@
                         uri: a.uri || "",
                     })),
                     images: album.coverArt?.sources || [],
-                    tracks: { items: await handlers.get_album_tracks({ album_id: id }) },
+                    tracks: { items: await collectAlbumTracks(uri, album) },
                 };
             } catch (e) {
                 console.error(`[${EXTENSION_NAME}] get_album error:`, e);
-                return { uri, id, tracks: { items: [] } };
+                throw e;
             }
         },
 
@@ -325,32 +411,10 @@
             const id = (album_id || "").split(":").pop();
             const uri = `spotify:album:${id}`;
             try {
-                const res = await Spicetify.GraphQL.Request(
-                    Spicetify.GraphQL.Definitions.getAlbum,
-                    { uri, locale: "", offset: 0, limit: 100 }
-                );
-
-                const items = res?.data?.albumUnion?.tracksV2?.items || [];
-                return items.map(item => {
-                    const t = item.track;
-                    if (!t) return null;
-                    return {
-                        uri: t.uri,
-                        id: t.uri.split(":").pop(),
-                        name: t.name || "",
-                        duration_ms: t.duration?.totalMilliseconds || 0,
-                        track_number: t.trackNumber || 1,
-                        disc_number: t.discNumber || 1,
-                        artists: (t.artists?.items || []).map(a => ({
-                            name: a.profile?.name || "",
-                            uri: a.uri || "",
-                            id: (a.uri || "").split(":").pop(),
-                        })),
-                    };
-                }).filter(Boolean);
+                return await collectAlbumTracks(uri, await fetchAlbum(uri));
             } catch (e) {
                 console.error(`[${EXTENSION_NAME}] get_album_tracks error:`, e);
-                return [];
+                throw e;
             }
         },
 
@@ -419,8 +483,8 @@
                     const batch = artistArray.slice(i, i + BATCH);
                     await Promise.allSettled(
                         batch.map(id =>
-                            Spicetify.GraphQL.Request(
-                                Spicetify.GraphQL.Definitions.queryArtistDiscographyAll,
+                            graphqlRequest(
+                                "queryArtistDiscographyAll",
                                 { uri: `spotify:artist:${id}`, offset: 0, limit: 300 }
                             ).then(res => {
                                 const discItems =
@@ -457,8 +521,8 @@
                     const batch = missing.slice(i, i + 50);
                     await Promise.allSettled(
                         batch.map(id =>
-                            Spicetify.GraphQL.Request(
-                                Spicetify.GraphQL.Definitions.getAlbum,
+                            graphqlRequest(
+                                "getAlbum",
                                 { uri: `spotify:album:${id}`, locale: "", offset: 0, limit: 1 }
                             ).then(res => {
                                 const d = res?.data?.albumUnion?.date;
@@ -487,8 +551,8 @@
             const id = (track_id || "").split(":").pop();
             const uri = `spotify:track:${id}`;
             try {
-                const res = await Spicetify.GraphQL.Request(
-                    Spicetify.GraphQL.Definitions.getTrack,
+                const res = await graphqlRequest(
+                    "getTrack",
                     { uri }
                 );
 
@@ -682,11 +746,11 @@
                     wanted.some((uid, i) => !uid || rowMap.get(uid)?.uri !== track_uris[i])) {
                     throw new Error("Sorted rows do not match the playlist");
                 }
-                const moves = planMoves(rows, wanted);
                 const rewriteWrites = 2 * Math.ceil(rows.length / 100);
+                const moves = planMoves(rows, wanted, typeof Platform.PlaylistAPI.move === "function" ? rewriteWrites : 0);
                 let strategy = "move";
-                if (!moves.length) strategy = "unchanged";
-                else if (typeof Platform.PlaylistAPI.move === "function" && moves.length <= rewriteWrites) {
+                if (moves?.length === 0) strategy = "unchanged";
+                else if (moves) {
                     for (const move of moves) {
                         await Platform.PlaylistAPI.move(uri, move.uids.map(uid => ({ uid })), move.location);
                     }
@@ -780,9 +844,18 @@
     // =========================================================================
     // POLLING
     // =========================================================================
+    function schedulePoll(delay = POLL_INTERVAL_MS) {
+        clearTimeout(pollTimer);
+        if (disposed) return;
+        if (delay === 0) queueMicrotask(poll);
+        else pollTimer = setTimeout(poll, delay);
+    }
+
     async function poll() {
-        if (!bridgeEnabled || polling || disposed) return;
+        if (disposed || polling) return;
+        if (!bridgeEnabled) { schedulePoll(); return; }
         polling = true;
+        let nextPoll = POLL_INTERVAL_MS;
 
         try {
             if (!sessionToken) {
@@ -796,9 +869,9 @@
                 if (!sessionToken) return;
             }
 
-            const resp = await fetch(`${BASE_URL}/request`, {
+            const resp = await fetch(`${BASE_URL}/request${supportsLongPoll ? "?wait_ms=500" : ""}`, {
                 headers: { "X-ANR-Token": sessionToken },
-                signal: AbortSignal.timeout(1000),
+                signal: AbortSignal.timeout(2000),
                 cache: "no-store",
             }).catch(() => null);
 
@@ -812,7 +885,15 @@
 
             if (resp.status === 401) {
                 sessionToken = null;
+                supportsLongPoll = true;
                 bridgeConnected = false;
+                return;
+            }
+            if (resp.status === 404 && supportsLongPoll) {
+                // Older running ANR servers can use the original endpoint
+                // until the application is restarted with the new code.
+                supportsLongPoll = false;
+                nextPoll = 0;
                 return;
             }
             if (resp.status === 204 || resp.status === 503) {
@@ -824,6 +905,7 @@
                     }
                     console.log(`[${EXTENSION_NAME}] Connected`);
                 }
+                if (resp.status === 204) nextPoll = supportsLongPoll ? 0 : Date.now() < activeUntil ? 20 : POLL_INTERVAL_MS;
                 return;
             }
             if (!resp.ok) return;
@@ -854,7 +936,7 @@
                 console.error("error:", e);
             }
 
-            await fetch(`${BASE_URL}/response`, {
+            const response = await fetch(`${BASE_URL}/response`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -863,6 +945,14 @@
                 body: JSON.stringify({ id: request.id, result, error }),
                 signal: AbortSignal.timeout(5000),
             });
+            if (!response.ok) {
+                if (response.status === 401) { sessionToken = null; supportsLongPoll = true; }
+                throw new Error("Could not deliver bridge response");
+            }
+            // Briefly drain queued work while ANR is active; retain slow idle
+            // polling so background CPU/network use stays low.
+            activeUntil = Date.now() + 200;
+            nextPoll = supportsLongPoll ? 0 : 20;
 
             console.log(error ? "❌ Failed" : "✅ Success", result);
             console.groupEnd();
@@ -874,6 +964,7 @@
             }
         } finally {
             polling = false;
+            schedulePoll(nextPoll);
         }
     }
 
@@ -898,6 +989,7 @@
 
                     if (bridgeEnabled) {
                         Spicetify.showNotification("🎸 ANR Bridge Enabled");
+                        schedulePoll(0);
                     } else {
                         Spicetify.showNotification("⏸️ ANR Bridge Disabled");
                         bridgeConnected = false;
@@ -917,16 +1009,16 @@
     // INIT
     // =========================================================================
     setupMenu();
-    const pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+    schedulePoll(0);
     globalThis.__anrBridge = {
         handlers,
         dispose() {
             disposed = true;
-            clearInterval(pollTimer);
+            clearTimeout(pollTimer);
             clearTimeout(menuRetry);
             menuItem?.deregister();
         },
     };
-    console.log(`[${EXTENSION_NAME}] Started — polling ${BASE_URL} every ${POLL_INTERVAL_MS}ms`);
+    console.log(`[${EXTENSION_NAME}] Started — waiting for requests at ${BASE_URL}`);
 
 })();

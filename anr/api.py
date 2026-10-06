@@ -37,6 +37,8 @@ class SpotifyAPI:
         self._cache_max_age = 300  # 5 minutes default cache TTL
         self._rate_limit_delay = 0.1  # Delay between API calls
         self._last_request_time = 0
+        self._bulk_artists_available = True
+        self._bulk_tracks_available = True
 
     @property
     def client(self) -> spotipy.Spotify:
@@ -168,11 +170,20 @@ class SpotifyAPI:
         results = []
         for i in range(0, len(artist_ids), 50):
             batch = artist_ids[i:i+50]
+            if not self._bulk_artists_available:
+                results.extend(self.get_artist(artist_id) for artist_id in batch)
+                continue
             try:
                 self._rate_limit()
                 response = self.client.artists(batch)
                 results.extend(response.get('artists', []))
             except Exception as e:
+                if isinstance(e, SpotifyException) and e.http_status in (403, 404):
+                    # Development Mode no longer supports bulk reads. Keep
+                    # the bulk path for apps whose quota mode still allows it.
+                    self._bulk_artists_available = False
+                    results.extend(self.get_artist(artist_id) for artist_id in batch)
+                    continue
                 self._handle_api_error(e, "Get multiple artists")
 
         return [a for a in results if a]
@@ -257,6 +268,28 @@ class SpotifyAPI:
         try:
             self._rate_limit()
             album = self.client.album(album_id)
+            page = album.get('tracks') or {}
+            if not isinstance(page.get('items'), list):
+                raise SpotifyAPIError("Could not read album tracks")
+            items = list(page.get('items') or [])
+            expected_total = page.get('total')
+            visited_pages = set()
+            while page.get('next'):
+                if page['next'] in visited_pages:
+                    raise SpotifyAPIError("Repeated album track page")
+                visited_pages.add(page['next'])
+                self._rate_limit()
+                page = self.client.next(page)
+                if not isinstance(page, dict) or not isinstance(page.get('items'), list) or not page['items']:
+                    raise SpotifyAPIError("Incomplete album tracks")
+                if isinstance(expected_total, int) and page.get('total') != expected_total:
+                    raise SpotifyAPIError("Album changed while reading tracks")
+                items.extend(page['items'])
+            if isinstance(expected_total, int) and len(items) != expected_total:
+                raise SpotifyAPIError("Incomplete album tracks")
+            if album.get('tracks'):
+                album = dict(album)
+                album['tracks'] = {**album['tracks'], 'items': items, 'next': None}
             self._set_cached(cache_key, album)
             return album
         except Exception as e:
@@ -322,11 +355,18 @@ class SpotifyAPI:
         results = []
         for i in range(0, len(track_ids), API_LIMITS["TRACKS_PER_REQUEST"]):
             batch = track_ids[i:i + API_LIMITS["TRACKS_PER_REQUEST"]]
+            if not self._bulk_tracks_available:
+                results.extend(self.get_track(track_id) for track_id in batch)
+                continue
             try:
                 self._rate_limit()
                 response = self.client.tracks(batch)
                 results.extend(response.get('tracks', []))
             except Exception as e:
+                if isinstance(e, SpotifyException) and e.http_status in (403, 404):
+                    self._bulk_tracks_available = False
+                    results.extend(self.get_track(track_id) for track_id in batch)
+                    continue
                 self._handle_api_error(e, "Get multiple tracks")
 
         return [t for t in results if t]
@@ -355,6 +395,23 @@ class SpotifyAPI:
         return [f for f in results if f]
 
     # PLAYLIST OPERATIONS (Basic)
+    def add_tracks_to_playlist(self, playlist_id: str, track_uris: List[str], position: Optional[int] = None) -> bool:
+        """Send the documented object body; Spotipy 2.26 sends a bare list."""
+        if not track_uris:
+            return True
+        payload = {'uris': list(track_uris)}
+        if position is not None:
+            payload['position'] = position
+        try:
+            self._rate_limit()
+            result = self.client._post(f"playlists/{playlist_id}/items", payload=payload)
+            if not isinstance(result, dict) or not result.get('snapshot_id'):
+                raise SpotifyAPIError("Spotify did not confirm the playlist addition")
+            return True
+        except Exception as e:
+            self._handle_api_error(e, f"Add tracks to playlist {playlist_id}")
+            return False
+
     def remove_playlist_tracks(self, playlist_id: str, track_uris: List[str]) -> bool:
         """Remove tracks from a playlist."""
         if not track_uris:
@@ -401,7 +458,7 @@ class SpotifyAPI:
                 if not items:
                     break
 
-                own_playlists = [p for p in items if p.get('owner', {}).get('id') == user_id]
+                own_playlists = [self._normalize_playlist(p) for p in items if p.get('owner', {}).get('id') == user_id]
                 all_playlists.extend(own_playlists)
 
                 if limit > 0 and len(all_playlists) >= limit:
@@ -433,10 +490,9 @@ class SpotifyAPI:
 
         try:
             self._rate_limit()
-            playlist = self.client.playlist(
-                playlist_id,
-                fields="id,name,description,owner,tracks(total),uri,images"
-            )
+            # Omitting fields supports both legacy tracks and current items
+            # response shapes without requesting a field absent from one.
+            playlist = self._normalize_playlist(self.client.playlist(playlist_id))
             self._set_cached(cache_key, playlist)
             return playlist
         except Exception as e:
@@ -451,18 +507,22 @@ class SpotifyAPI:
     ) -> Optional[Dict]:
         """Create a new playlist."""
         try:
-            user_id = self.get_current_user_id()
             self._rate_limit()
-            playlist = self.client.user_playlist_create(
-                user_id,
+            playlist = self.client.current_user_playlist_create(
                 name,
                 public=public,
                 description=description
             )
-            return playlist
+            return self._normalize_playlist(playlist)
         except Exception as e:
             self._handle_api_error(e, "Create playlist")
             return None
+
+    @staticmethod
+    def _normalize_playlist(playlist: Dict) -> Dict:
+        if 'tracks' not in playlist and isinstance(playlist.get('items'), dict):
+            return {**playlist, 'tracks': playlist['items']}
+        return playlist
 
 # ARTIST SEARCH & SELECTION HELPERS
 class ArtistSearcher:
@@ -630,6 +690,13 @@ class ReleaseFetcher:
         """Get detailed info about a release including tracks."""
         return self.api.get_album(release_uri)
 
+    def get_artist_releases_batch(self, artist_uris: List[str]) -> Dict[str, Dict]:
+        """Use the bridge's bounded batch read when available."""
+        batch_read = getattr(self.api, "get_artist_albums_batch", None)
+        if not callable(batch_read):
+            return {}
+        return batch_read(artist_uris, include_groups="album,single")
+
     def filter_releases_by_date(
         self,
         releases: List[Dict],
@@ -727,7 +794,7 @@ class ProgressDisplay:
                 status=""
             )
         else:
-            print(f"\n{description}...")
+            print(f"\n{description}")
 
     def update(self, advance: int = 1, status: str = ""):
         """Update progress."""

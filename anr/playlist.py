@@ -45,7 +45,7 @@ class PlaylistTrack:
     @classmethod
     def from_playlist_item(cls, item: Dict) -> Optional['PlaylistTrack']:
         """Create from Spotify playlist item."""
-        track = item.get('track')
+        track = item.get('track') or item.get('item')
         if not track or not track.get('uri'):
             return None
 
@@ -123,11 +123,10 @@ class PlaylistOperations:
         try:
             while True:
                 self.api._rate_limit()
-                response = self.client.playlist_tracks(
+                response = self.client.playlist_items(
                     playlist_id,
                     limit=API_LIMITS["PLAYLIST_TRACKS_LIMIT"],
                     offset=offset,
-                    fields="items(added_at,track(uri,name,artists,album,duration_ms,popularity)),total,next"
                 )
 
                 if total is None:
@@ -197,14 +196,10 @@ class PlaylistOperations:
             batch = track_uris[i:i + batch_size]
 
             try:
-                self.api._rate_limit()
-
-                if position is not None:
-                    self.client.playlist_add_items(playlist_id, batch, position=position + i)
+                if self.api.add_tracks_to_playlist(playlist_id, batch, position=position + i if position is not None else None):
+                    added += len(batch)
                 else:
-                    self.client.playlist_add_items(playlist_id, batch)
-
-                added += len(batch)
+                    failed += len(batch)
 
             except Exception as e:
                 print_error(f"Failed to add batch: {e}")
@@ -289,7 +284,7 @@ class PlaylistOperations:
             return 0
 
         if progress_callback:
-            progress_callback("Scanning playlist...", 0, 0)
+            progress_callback("Scanning playlist", 0, 0)
 
         tracks = self.get_playlist_tracks(playlist_uri)
 
@@ -305,11 +300,11 @@ class PlaylistOperations:
             return 0
 
         if progress_callback:
-            progress_callback(f"Removing {len(tracks_to_remove)} tracks...", 0, len(tracks_to_remove))
+            progress_callback(f"Removing {len(tracks_to_remove)} tracks", 0, len(tracks_to_remove))
 
         def remove_progress(current, total):
             if progress_callback:
-                progress_callback("Removing tracks...", current, total)
+                progress_callback("Removing tracks", current, total)
 
         removed, _ = self.remove_tracks(playlist_uri, tracks_to_remove, remove_progress)
         return removed
@@ -337,7 +332,7 @@ class PlaylistOperations:
         if not playlist_id:
             return False
         if progress_callback:
-            progress_callback("Applying sorted order...", 0, len(uris))
+            progress_callback("Applying sorted order", 0, len(uris))
         success = self.api.reorder_playlist_tracks(
             playlist_id, uris,
             [track['uid'] for track in sorted_tracks] if all(track.get('uid') for track in sorted_tracks) else [],
@@ -361,7 +356,7 @@ class PlaylistOperations:
 
         try:
             if progress_callback:
-                progress_callback("Replacing tracks...", 0, len(track_uris))
+                progress_callback("Replacing tracks", 0, len(track_uris))
 
             # ---- Bridge path: clear then add -------------------------------
             if _is_bridge(self.api):
@@ -381,9 +376,12 @@ class PlaylistOperations:
                 def add_progress(current, total):
                     if progress_callback:
                         done = len(first_batch) + current
-                        progress_callback("Adding tracks...", done, len(track_uris))
+                        progress_callback("Adding tracks", done, len(track_uris))
 
-                self.add_tracks(playlist_uri, remaining, progress_callback=add_progress)
+                added, failed = self.add_tracks(playlist_uri, remaining, progress_callback=add_progress)
+                if failed or added != len(remaining):
+                    self.api.clear_cache(f"playlist:{playlist_id}")
+                    return False
 
             self.api.clear_cache(f"playlist:{playlist_id}")
             return True
@@ -404,7 +402,7 @@ class PlaylistOperations:
     ) -> Optional[Dict]:
         """Duplicate a playlist with all its tracks."""
         if progress_callback:
-            progress_callback("Getting source playlist...", 0, 0)
+            progress_callback("Getting source playlist", 0, 0)
 
         source = self.get_playlist_details(source_uri)
         if not source:
@@ -412,7 +410,7 @@ class PlaylistOperations:
             return None
 
         if progress_callback:
-            progress_callback("Creating new playlist...", 0, 0)
+            progress_callback("Creating new playlist", 0, 0)
 
         description = f"Duplicated from \"{source.get('name', 'Unknown')}\""
         new_playlist = self.create_playlist(new_name, description)
@@ -421,22 +419,22 @@ class PlaylistOperations:
             return None
 
         if progress_callback:
-            progress_callback("Fetching tracks...", 0, 0)
+            progress_callback("Fetching tracks", 0, 0)
 
         def track_progress(current, total):
             if progress_callback:
-                progress_callback("Fetching tracks...", current, total)
+                progress_callback("Fetching tracks", current, total)
 
         tracks = self.get_playlist_tracks(source_uri, track_progress)
         track_uris = [t.uri for t in tracks]
 
         if track_uris:
             if progress_callback:
-                progress_callback("Adding tracks...", 0, len(track_uris))
+                progress_callback("Adding tracks", 0, len(track_uris))
 
             def add_progress(current, total):
                 if progress_callback:
-                    progress_callback("Adding tracks...", current, total)
+                    progress_callback("Adding tracks", current, total)
 
             self.add_tracks(new_playlist['uri'], track_uris, progress_callback=add_progress)
 
@@ -491,7 +489,7 @@ class PlaylistOperations:
     ) -> Dict:
         """Analyze a playlist and return statistics."""
         if progress_callback:
-            progress_callback("Fetching tracks...")
+            progress_callback("Fetching tracks")
 
         tracks = self.get_playlist_tracks(playlist_uri)
 
@@ -837,7 +835,7 @@ class PlaylistRestorer:
             print_error("Invalid backup data")
             return False
 
-        print_info(f"Restoring {len(track_uris)} tracks...")
+        print_info(f"Restoring {len(track_uris)} tracks")
 
         with create_progress_context("Restoring playlist", len(track_uris)) as progress:
             def update_progress(status, current, total):

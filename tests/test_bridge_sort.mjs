@@ -25,7 +25,7 @@ function fixture(count = 20) {
         async remove(uri,selected){calls.push('remove');const ids=new Set(selected.map(x=>x.uid));rows=rows.filter(x=>!ids.has(x.uid));},
         async add(uri,uris,location){calls.push('add');assert.equal(location.after,'end');if(!dropAdds) rows.push(...uris.map((uri,i)=>({uid:`new-${rows.length+i}`,uri,addedAt:'new'})));},
     };
-    const context = vm.createContext({console:{log(){},warn(){},error(){}},setInterval(){return 1;},clearInterval(){},setTimeout(){return 1;},clearTimeout(){},
+    const context = vm.createContext({console:{log(){},warn(){},error(){}},queueMicrotask(){},setInterval(){return 1;},clearInterval(){},setTimeout(){return 1;},clearTimeout(){},
         Spicetify:{Platform:{PlaylistAPI:api,UserAPI:{},LibraryAPI:{}},React:{},LocalStorage:{get(){return 'false';}},
                   Menu:{Item:class{register(){} deregister(){}}},showNotification(...args){notifications.push(args);}}});
     vm.runInContext(source,context);
@@ -45,6 +45,20 @@ test('large nearly sorted playlist uses one move and preserves duplicates and da
 test('already sorted requires no writes',async()=>{
     const f=fixture();const result=await f.handlers.reorder_playlist_tracks(f.params());
     assert.equal(result.strategy,'unchanged');assert.deepEqual(f.calls,['read']);
+});
+test('a plan tied with rewrite cost still uses exact UID moves',async()=>{
+    const f=fixture(3),wanted=[...f.original].reverse();
+    const result=await f.handlers.reorder_playlist_tracks(f.params(wanted));
+    assert.equal(result.strategy,'move');assert.equal(result.writes,2);
+    assert.deepEqual(f.rows.map(x=>x.uid),wanted.map(x=>x.uid));
+});
+test('missing native move rewrites changed order but leaves unchanged order alone',async()=>{
+    const f=fixture(12);delete f.api.move;
+    assert.equal((await f.handlers.reorder_playlist_tracks(f.params())).strategy,'unchanged');
+    const wanted=[...f.original].reverse();
+    const result=await f.handlers.reorder_playlist_tracks(f.params(wanted));
+    assert.equal(result.success,true);assert.equal(result.strategy,'rewrite');
+    assert.deepEqual(f.rows.map(x=>x.uri),wanted.map(x=>x.uri));
 });
 test('moves after an already-correct prefix use a UID object anchor',async()=>{
     const f=fixture(21),wanted=[f.original[0],f.original[5],f.original[6],...f.original.slice(1,5),...f.original.slice(7)];

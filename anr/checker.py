@@ -14,26 +14,19 @@ from .constants import (
     RICH_AVAILABLE, console,
     print_success, print_error, print_warning, print_info,
 )
+from .output import (
+    print_activity, print_profile_header, print_profile_counts, print_artist_progress,
+    print_check_summary, print_profiles_summary, print_all_check_summary,
+)
 from .models import Artist, Profile
-from .api import SpotifyAPI, ReleaseFetcher
+from .api import SpotifyAPI, SpotifyAPIError, ReleaseFetcher
 from .config import ConfigManager
 from .playlist import PlaylistOperations
 from .filters import RemixDetector, ReleaseDateFilter
 
 
 def _print_section_header(title: str, position: str = "") -> None:
-    """Print a quiet, easy-to-scan section header."""
-    width = 64
-    if RICH_AVAILABLE:
-        heading = f"[bold cyan]{title}[/]"
-        if position:
-            heading += f" [dim]{position:>{max(1, width - len(title) - len(position))}}[/]"
-        console.print(heading)
-        console.print("-" * width, style="dim")
-    else:
-        suffix = f"  {position}" if position else ""
-        print(f"{title}{suffix}")
-        print("-" * width)
+    print_profile_header(title, position)
 
 
 def _aurora_color(position: float) -> str:
@@ -50,20 +43,7 @@ def _aurora_color(position: float) -> str:
 
 
 def _print_artist_progress(current: int, total: int, artist_name: str) -> None:
-    """Print artist progress using an aurora blue-to-green gradient."""
-    counter = f"{current:>{len(str(total))}}/{total}"
-    if RICH_AVAILABLE:
-        from rich.text import Text
-
-        progress = (current - 1) / max(total - 1, 1)
-        color = _aurora_color(progress)
-        line = Text("  ")
-        line.append(counter, style=f"bold {color}")
-        line.append("  ")
-        line.append(artist_name, style=color)
-        console.print(line)
-    else:
-        print(f"  {counter}  {artist_name}")
+    print_artist_progress(current, total, artist_name)
 
 
 class CheckStatus(Enum):
@@ -259,7 +239,7 @@ class ReleaseChecker:
         try:
             notify('start')
             if progress_callback:
-                progress_callback(CheckProgress(phase='init', message='Fetching existing playlist tracks...'))
+                progress_callback(CheckProgress(phase='init', message='Fetching existing playlist tracks'))
 
             existing_tracks = self.playlist_ops.get_playlist_tracks(profile.playlist_uri)
             existing_uris = {t.uri for t in existing_tracks}
@@ -270,8 +250,7 @@ class ReleaseChecker:
                     existing_signatures.add(f"{t.name.lower()}|||{t.primary_artist.lower()}")
 
             if not silent:
-                print_info(f"Playlist   {len(existing_uris):,} existing tracks")
-                print_info(f"Artists    {len(profile.artists)} to check")
+                print_profile_counts(len(existing_uris), len(profile.artists))
                 print()
 
             tracked_tracks = getattr(profile, "tracked_tracks", None) or {}
@@ -282,6 +261,8 @@ class ReleaseChecker:
             processed_releases: Set[str] = set()
             filtered_tracks: Set[str] = set()
             candidate_tracks: Set[str] = set()
+            prefetched_releases = {}
+            batch_read = getattr(self.release_fetcher, "get_artist_releases_batch", None)
 
             for idx, artist in enumerate(profile.artists):
                 if progress_callback:
@@ -297,9 +278,26 @@ class ReleaseChecker:
                     _print_artist_progress(idx + 1, len(profile.artists), artist.name)
 
                 try:
-                    all_releases = self.release_fetcher.get_artist_releases(artist.uri)
+                    if idx % 4 == 0:
+                        prefetched_releases = {}
+                        if callable(batch_read):
+                            try:
+                                prefetched_releases = batch_read(
+                                    [a.uri for a in profile.artists[idx:idx + 4]]
+                                )
+                            except Exception:
+                                # An older bridge or failed batch transport can
+                                # still serve the existing single-artist calls.
+                                prefetched_releases = {}
+                    entry = prefetched_releases.get(artist.uri)
+                    if entry is None:
+                        all_releases = self.release_fetcher.get_artist_releases(artist.uri)
+                    else:
+                        if entry.get("error"):
+                            raise RuntimeError(entry["error"])
+                        all_releases = entry["releases"]
                 except Exception as artist_err:
-                    print_warning(f"    Skipped {artist.name} (bridge error): {type(artist_err).__name__}")
+                    print_warning(f"    Could not check {artist.name}: {artist_err}")
                     result.artist_results.append(ArtistCheckResult(
                         artist=artist,
                         status=CheckStatus.ERROR,
@@ -337,6 +335,8 @@ class ReleaseChecker:
 
                     album_tracks = album_details.get('tracks', {}).get('items', [])
                     album_popularity = album_details.get('popularity', 0)
+                    if profile.skip_low_popularity and isinstance(self.api, SpotifyAPI) and album_details.get('popularity') is None:
+                        raise SpotifyAPIError("Spotify did not provide album popularity. Disable the low-popularity filter for this profile.")
 
                     if profile.skip_long_albums and len(album_tracks) > profile.max_songs:
                         if not silent:
@@ -410,6 +410,8 @@ class ReleaseChecker:
                     if profile.limit_songs_per_album and len(tracks_to_add) > profile.max_songs_per_album:
                         track_details = self.api.get_multiple_tracks(tracks_to_add)
                         if track_details:
+                            if isinstance(self.api, SpotifyAPI) and any(t.get('popularity') is None for t in track_details):
+                                raise SpotifyAPIError("Spotify did not provide track popularity. Disable the per-album popularity limit for this profile.")
                             sorted_tracks = sorted(
                                 track_details,
                                 key=lambda t: t.get('popularity', 0),
@@ -464,11 +466,12 @@ class ReleaseChecker:
                     progress_callback(CheckProgress(
                         phase='adding',
                         tracks_found=len(all_new_tracks),
-                        message=f'Adding {len(all_new_tracks)} tracks to playlist...'
+                        message=f'Adding {len(all_new_tracks)} tracks to playlist'
                     ))
 
                 if not silent:
-                    print_info(f"Adding {len(all_new_tracks)} new tracks to playlist...")
+                    noun = "track" if len(all_new_tracks) == 1 else "tracks"
+                    print_activity(f"Adding {len(all_new_tracks):,} new {noun} to playlist")
 
                 added, failed = self.playlist_ops.add_tracks(profile.playlist_uri, all_new_tracks)
 
@@ -480,10 +483,10 @@ class ReleaseChecker:
                 if profile.sort_by_date and added > 0:
                     notify('sorting')
                     if progress_callback:
-                        progress_callback(CheckProgress(phase='sorting', message='Sorting playlist by release date...'))
+                        progress_callback(CheckProgress(phase='sorting', message='Sorting playlist by release date'))
 
                     if not silent:
-                        print_info("Sorting playlist by release date...")
+                        print_activity("Sorting playlist by release date")
 
                     try:
                         from .tools import PlaylistTools
@@ -506,6 +509,14 @@ class ReleaseChecker:
             else:
                 result.status = CheckStatus.NO_NEW
 
+            artist_errors = sum(r.status == CheckStatus.ERROR for r in result.artist_results)
+            if artist_errors:
+                result.status = CheckStatus.ERROR if artist_errors == len(profile.artists) else CheckStatus.PARTIAL
+                message = f"Could not check {artist_errors} of {len(profile.artists)} artists"
+                result.error_message = "; ".join(
+                    part for part in (result.error_message, message) if part
+                )
+
             if not dry_run:
                 processed_at = time.time()
                 if profile.tracked_tracks is None:
@@ -527,7 +538,10 @@ class ReleaseChecker:
                     for release_uri in candidate_releases:
                         profile.tracked_releases[release_uri] = processed_at
 
-                profile.last_check = processed_at
+                # Keep failed artist reads due for retry. Successful releases
+                # remain tracked so retrying cannot add them a second time.
+                if not artist_errors:
+                    profile.last_check = processed_at
                 self.config_manager.save()
 
             result.duration_seconds = time.time() - start_time
@@ -612,10 +626,9 @@ class InteractiveChecker:
             )
 
         print()
-        print_info(f"Profile: {profile.name}")
-        print_info(f"Artists: {len(profile.artists)}")
-        print_info(f"Playlist: {profile.playlist_name}")
-        print_info(f"Days to check: {profile.days_to_check if profile.days_to_check > 0 else 'All time'}")
+        print_check_summary(
+            profile.name, len(profile.artists), profile.playlist_name, profile.days_to_check,
+        )
         print()
 
         if RICH_AVAILABLE:
@@ -666,7 +679,7 @@ class InteractiveChecker:
                 console=console
             ) as progress:
                 task = progress.add_task(
-                    "Checking releases...",
+                    "Checking releases",
                     total=len(profile.artists),
                     status=""
                 )
@@ -676,13 +689,13 @@ class InteractiveChecker:
                         progress.update(
                             task,
                             completed=p.artist_current,
-                            description=f"Checking {p.artist_name}...",
+                            description=f"Checking {p.artist_name}",
                             status=f"{p.artist_current}/{p.artist_total}"
                         )
                     elif p.phase == 'adding':
-                        progress.update(task, description="Adding tracks...", status=p.message)
+                        progress.update(task, description="Adding tracks", status=p.message)
                     elif p.phase == 'sorting':
-                        progress.update(task, description="Sorting playlist...", status="")
+                        progress.update(task, description="Sorting playlist", status="")
 
                 result = self.checker.check_profile(profile, update_progress, silent=True)
         else:
@@ -706,10 +719,7 @@ class InteractiveChecker:
             print_error("No profiles configured!")
             return []
 
-        print_info(f"This will check {len(profiles)} profiles:")
-        for p in profiles:
-            print(f"  - {p.name}: {len(p.artists)} artists -> {p.playlist_name or 'No playlist'}")
-        print()
+        print_profiles_summary(profiles)
 
         if RICH_AVAILABLE:
             from rich.prompt import Confirm
@@ -753,12 +763,13 @@ class InteractiveChecker:
             total_added += result.total_tracks_added
 
         print()
-        _print_section_header("Summary")
-
         with_new = sum(1 for r in results if r.total_tracks_added > 0)
-        print_success(f"Checked {len(results)} profiles")
-        print_success(f"Profiles with new releases: {with_new}")
-        print_success(f"Total tracks added: {total_added}")
+        print_all_check_summary(
+            len(results), with_new, total_added,
+            errors=sum(r.status == CheckStatus.ERROR for r in results),
+            partial=sum(r.status == CheckStatus.PARTIAL for r in results),
+            skipped=sum(r.status == CheckStatus.SKIPPED for r in results),
+        )
 
         return results
 
@@ -803,7 +814,7 @@ class ScheduledChecker:
             return []
 
         if not silent:
-            print_info(f"Checking {len(due)} due profiles...")
+            print_info(f"Checking {len(due)} due profiles")
 
         results = []
 

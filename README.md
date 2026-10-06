@@ -150,6 +150,10 @@ After pulling an update, rerun `python install_bridge.py` and `spicetify apply`,
 
 For headless servers or environments without the Spotify Desktop client:
 
+This mode requires a Spotify developer app's Client ID and Client Secret, plus OAuth login. It cannot connect without developer credentials. Development Mode also requires the app owner to have Spotify Premium. See Spotify's [current migration guide](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide).
+
+ANR supports the current playlist item response format and falls back to individual artist/track reads when bulk endpoints are unavailable. Development Mode does not provide popularity, so popularity sorting, the low-popularity filter, and popularity-based per-album limits cannot be used when that data is absent. Release-date checks and sorting remain supported for playlists you own or collaborate on.
+
 1. Visit the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
 2. Create an application and add `http://127.0.0.1:8888/callback` under **Redirect URIs**.
 3. Set your environment variables (or let ANR prompt you upon first start):
