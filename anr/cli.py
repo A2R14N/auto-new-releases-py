@@ -137,10 +137,11 @@ class CLIHandler:
         else:
             return self._check_current(args.dry_run)
 
-    def _check_current(self, dry_run: bool = False) -> int:
+    def _check_current(self, dry_run: bool = False, profile=None) -> int:
         from .checker import CheckStatus
 
-        profile = self.app.config_manager.get_active_profile()
+        if profile is None:
+            profile = self.app.config_manager.get_active_profile()
         self.log(f"Checking profile: {profile.name}")
 
         if not profile.playlist_uri:
@@ -174,12 +175,7 @@ class CLIHandler:
             self.log(f"Profile not found: {profile_name}", "error")
             return 1
 
-        original_id = self.app.config_manager.config.active_profile_id
-        self.app.config_manager.config.active_profile_id = profile.id
-        try:
-            return self._check_current(dry_run)
-        finally:
-            self.app.config_manager.config.active_profile_id = original_id
+        return self._check_current(dry_run, profile=profile)
 
     def _check_all(self, dry_run: bool = False) -> int:
         from .checker import CheckStatus

@@ -443,6 +443,19 @@ class SpotifyAPI:
             self._handle_api_error(e, f"Remove tracks from playlist {playlist_id}")
             return False
 
+    def remove_playlist_occurrences(self, playlist_id, items, snapshot_id):
+        """Remove position-specific items against the confirmed snapshot."""
+        try:
+            self._rate_limit()
+            response = self.client.playlist_remove_specific_occurrences_of_items(
+                playlist_id, items, snapshot_id=snapshot_id
+            )
+            if not isinstance(response, dict) or not response.get('snapshot_id'):
+                raise SpotifyAPIError("Spotify did not confirm duplicate removal")
+            return response['snapshot_id']
+        except Exception as e:
+            self._handle_api_error(e, "Remove duplicate playlist rows")
+
     def get_user_playlists(self, limit: int = 50) -> List[Dict]:
         """Get current user's playlists (paginated)."""
         all_playlists = []

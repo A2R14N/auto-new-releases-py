@@ -51,7 +51,7 @@ class FakeHTTP:
         elif path == 'playlists/p':
             if params.get('fields'):
                 raise AssertionError('Field selection must support both playlist response shapes')
-            data = {'id':'p','uri':'spotify:playlist:p','name':'Playlist','owner':{'id':'user'},'items':{'total':len(self.rows)}}
+            data = {'id':'p','uri':'spotify:playlist:p','name':'Playlist','owner':{'id':'user'},'items':{'total':len(self.rows)},'snapshot_id':'snapshot'}
         elif path == 'playlists/p/items':
             if method == 'GET':
                 if params.get('fields'):
@@ -72,8 +72,14 @@ class FakeHTTP:
                     data = {'snapshot_id':'snapshot'}
             elif method == 'DELETE':
                 self.assert_modern_delete(body)
-                ids = {item['uri'].split(':')[-1] for item in body['items']}
-                self.rows = [name for name in self.rows if name not in ids]
+                if all('positions' in item for item in body['items']):
+                    positions = {position for item in body['items'] for position in item['positions']}
+                    for item in body['items']:
+                        assert all(self.rows[position] == item['uri'].split(':')[-1] for position in item['positions'])
+                    self.rows = [name for i, name in enumerate(self.rows) if i not in positions]
+                else:
+                    ids = {item['uri'].split(':')[-1] for item in body['items']}
+                    self.rows = [name for name in self.rows if name not in ids]
                 data = {'snapshot_id':'snapshot'}
         elif path == 'artists/a/albums':
             data = {'items':[{'uri':'spotify:album:release','id':'release','name':'New release','release_date':date.today().isoformat()}], 'next':None}
@@ -198,7 +204,7 @@ class WebAPITests(unittest.TestCase):
         self.assertEqual(['new','existing'],http.rows)
         self.assertIn('spotify:album:release',profile.tracked_releases)
         self.assertIn('spotify:track:new',profile.tracked_tracks)
-        manager.save.assert_called_once()
+        self.assertEqual(2, manager.save.call_count)  # Persist sort intent before writes, then completed history.
 
     def test_failed_sort_tail_batch_is_reported_and_backup_is_retained(self):
         http, api, ops = fixture()

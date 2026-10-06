@@ -104,10 +104,12 @@ class PlaylistSorter:
                 return result
 
             if create_backup:
-                PlaylistBackup.create(
+                if not PlaylistBackup.create(
                     playlist_uri, playlist_name,
                     [t.uri for t in tracks], f"sort_by_{criteria.value}"
-                )
+                ):
+                    result.error_message = "Could not create recovery backup; playlist unchanged"
+                    return result
 
             # ----------------------------------------------------------------
             # Build sortable list.
@@ -234,7 +236,8 @@ class PlaylistSorter:
             if success:
                 result.success = True
                 result.tracks_sorted = len(sorted_uris)
-                PlaylistBackup.complete()
+                if create_backup:
+                    PlaylistBackup.complete(playlist_uri)
             else:
                 result.error_message = "Failed to save sorted order; backup retained"
 
@@ -347,17 +350,25 @@ class PlaylistDeduplicator:
             return result
 
         if create_backup:
-            PlaylistBackup.create(playlist_uri, playlist_name, [t.uri for t in tracks], "deduplicate")
+            if not PlaylistBackup.create(playlist_uri, playlist_name, [t.uri for t in tracks], "deduplicate"):
+                result.success = False
+                result.error_message = "Could not create recovery backup; playlist unchanged"
+                print_error(result.error_message)
+                return result
 
-        uris_to_remove = [d.uri for d in duplicates]
-        removed, failed = self.ops.remove_tracks(playlist_uri, uris_to_remove)
+        removed, failed = self.ops.remove_track_occurrences(
+            playlist_uri, tracks, [d.duplicate_index for d in duplicates]
+        )
         result.duplicates_removed = removed
         result.removed_tracks = duplicates
 
         if failed > 0:
+            result.success = False
             result.error_message = f"Failed to remove {failed} tracks"
+            print_error(result.error_message)
         else:
-            PlaylistBackup.complete()
+            if create_backup:
+                PlaylistBackup.complete(playlist_uri)
 
         result.duration_seconds = time.time() - start_time
         if removed > 0:
@@ -390,18 +401,22 @@ class PlaylistDeduplicator:
             result.similar_duplicates = len([d for d in duplicates if d.match_type == 'similar'])
 
             if create_backup:
-                PlaylistBackup.create(playlist_uri, playlist_name, [t.uri for t in tracks], "deduplicate")
+                if not PlaylistBackup.create(playlist_uri, playlist_name, [t.uri for t in tracks], "deduplicate"):
+                    result.error_message = "Could not create recovery backup; playlist unchanged"
+                    return result
 
-            uris_to_remove = [d.uri for d in duplicates]
-            removed, failed = self.ops.remove_tracks(playlist_uri, uris_to_remove)
+            removed, failed = self.ops.remove_track_occurrences(
+                playlist_uri, tracks, [d.duplicate_index for d in duplicates]
+            )
             result.duplicates_removed = removed
             result.removed_tracks = duplicates
-            result.success = True
+            result.success = failed == 0
 
             if failed > 0:
                 result.error_message = f"Failed to remove {failed} tracks"
             else:
-                PlaylistBackup.complete()
+                if create_backup:
+                    PlaylistBackup.complete(playlist_uri)
 
             result.duration_seconds = time.time() - start_time
             return result
@@ -613,16 +628,18 @@ class ArtistTrackRemover:
 
         if create_backup:
             playlist = self.ops.get_playlist_details(playlist_uri)
-            PlaylistBackup.create(
+            if not PlaylistBackup.create(
                 playlist_uri,
                 playlist.get('name', 'Unknown') if playlist else 'Unknown',
                 [t.uri for t in tracks],
                 f"remove_artist_{artist_name}"
-            )
+            ):
+                print_error("Could not create recovery backup; playlist unchanged")
+                return 0, artist_name
 
         removed, failed = self.ops.remove_tracks(playlist_uri, tracks_to_remove)
-        if removed > 0 and failed == 0:
-            PlaylistBackup.complete()
+        if removed > 0 and failed == 0 and create_backup:
+            PlaylistBackup.complete(playlist_uri)
 
         return removed, artist_name
 

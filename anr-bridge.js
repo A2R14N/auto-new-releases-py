@@ -73,6 +73,9 @@
     }
 
     async function rewritePlaylist(uri, rows, uris) {
+        if (uris.some(uri => uri.startsWith('spotify:local:'))) {
+            throw new Error("Local files require playlist row moves and cannot be rewritten");
+        }
         for (let i = 0; i < rows.length; i += 100) {
             await Platform.PlaylistAPI.remove(uri, rows.slice(i, i + 100).map(row => ({ uid: row.uid })));
         }
@@ -178,12 +181,32 @@
     async function fetchArtistAlbums(artist_id, include_groups = "album,single") {
         const uri = `spotify:artist:${artist_id}`;
         const groups = new Set(include_groups.toLowerCase().split(",").map(s => s.trim()));
-        const res = await graphqlRequest(
-            "queryArtistDiscographyAll",
-            { uri, offset: 0, limit: 100 }
-        );
-        const items = res?.data?.artistUnion?.discography?.all?.items;
-        if (!Array.isArray(items)) throw new Error("Could not read artist releases");
+        const items = [];
+        const seenPages = new Set();
+        let total = null;
+        while (true) {
+            const res = await graphqlRequest("queryArtistDiscographyAll", { uri, offset: items.length, limit: 100 });
+            const page = res?.data?.artistUnion?.discography?.all;
+            if (!Array.isArray(page?.items)) throw new Error("Could not read artist releases");
+            if (page.totalCount !== undefined) {
+                if (!Number.isInteger(page.totalCount) || page.totalCount < 0 || (total !== null && total !== page.totalCount)) {
+                    throw new Error("Artist releases changed while reading");
+                }
+                total = page.totalCount;
+            }
+            if (!page.items.length) {
+                if (total !== null && items.length !== total) throw new Error("Incomplete artist releases");
+                break;
+            }
+            const pageKey = JSON.stringify(page.items.map(item => item.releases?.items?.[0]?.uri));
+            if (seenPages.has(pageKey)) throw new Error("Repeated artist release page");
+            seenPages.add(pageKey);
+            items.push(...page.items);
+            if (total !== null) {
+                if (items.length > total) throw new Error("Incomplete artist releases");
+                if (items.length === total) break;
+            } else if (page.items.length < 100) break;
+        }
         return items.map(item => {
             const rel = item.releases?.items?.[0];
             if (!rel) return null;
@@ -708,7 +731,7 @@
                 }).filter(Boolean);
             } catch (e) {
                 console.error(`[${EXTENSION_NAME}] get_playlist_tracks error:`, e);
-                return [];
+                throw e;
             }
         },
 
@@ -747,7 +770,9 @@
                     throw new Error("Sorted rows do not match the playlist");
                 }
                 const rewriteWrites = 2 * Math.ceil(rows.length / 100);
-                const moves = planMoves(rows, wanted, typeof Platform.PlaylistAPI.move === "function" ? rewriteWrites : 0);
+                const canMove = typeof Platform.PlaylistAPI.move === "function";
+                const moveBudget = track_uris.some(uri => uri.startsWith('spotify:local:')) ? Infinity : rewriteWrites;
+                const moves = planMoves(rows, wanted, canMove ? moveBudget : 0);
                 let strategy = "move";
                 if (moves?.length === 0) strategy = "unchanged";
                 else if (moves) {
@@ -801,13 +826,38 @@
             }
         },
 
+        async remove_playlist_rows({ playlist_id, row_uids, expected_uris, expected_uids }) {
+            const uri = `spotify:playlist:${playlist_id}`;
+            try {
+                const rows = await playlistRows(uri);
+                if (!Array.isArray(expected_uris) || !Array.isArray(expected_uids) ||
+                    expected_uris.length !== rows.length || expected_uids.length !== rows.length ||
+                    rows.some((row, i) => row.uri !== expected_uris[i] || row.uid !== expected_uids[i])) {
+                    throw new Error("Playlist changed since duplicate scan; retry");
+                }
+                const availableUids = new Set(rows.map(row => row.uid));
+                if (!Array.isArray(row_uids) || new Set(row_uids).size !== row_uids.length ||
+                    row_uids.some(uid => !uid || !availableUids.has(uid))) {
+                    throw new Error("Invalid duplicate playlist rows");
+                }
+                const selected = new Set(row_uids);
+                const remaining = rows.filter(row => !selected.has(row.uid));
+                for (let i = 0; i < row_uids.length; i += 100) {
+                    await Platform.PlaylistAPI.remove(uri, row_uids.slice(i, i + 100).map(uid => ({ uid })));
+                }
+                await verifyOrder(uri, remaining.map(row => row.uri), remaining.map(row => row.uid));
+                return { success: true };
+            } catch (e) {
+                return { success: false, error: String(e) };
+            }
+        },
+
         async remove_tracks_from_playlist({ playlist_id, track_uris }) {
             if (!track_uris?.length) return { success: true };
             const uri = `spotify:playlist:${playlist_id}`;
 
             try {
-                const contents = await Platform.PlaylistAPI.getContents(uri);
-                const items = contents?.items || [];
+                const items = await playlistRows(uri);
                 const targets = new Set(track_uris);
 
                 const removalObjects = items

@@ -51,6 +51,7 @@ class Profile:
     tracked_tracks: Dict[str, float] = field(default_factory=dict)
     days_to_check: int = DEFAULT_VALUES["DAYS_TO_CHECK"]
     sort_by_date: bool = True
+    pending_sort: bool = False
     skip_remixes: bool = False
     skip_low_popularity: bool = False
     min_popularity: int = DEFAULT_VALUES["MIN_POPULARITY"]
@@ -77,6 +78,7 @@ class Profile:
             'trackedTracks': 'tracked_tracks',
             'daysToCheck': 'days_to_check',
             'sortByDate': 'sort_by_date',
+            'pendingSort': 'pending_sort',
             'skipRemixes': 'skip_remixes',
             'skipLowPopularity': 'skip_low_popularity',
             'minPopularity': 'min_popularity',
@@ -103,7 +105,7 @@ class Profile:
         valid_fields = {
             'id', 'name', 'playlist_uri', 'playlist_name', 'check_interval',
             'last_check', 'tracked_releases', 'tracked_tracks', 'days_to_check',
-            'sort_by_date', 'skip_remixes', 'skip_low_popularity', 'min_popularity',
+            'sort_by_date', 'pending_sort', 'skip_remixes', 'skip_low_popularity', 'min_popularity',
             'skip_long_albums', 'max_songs', 'limit_songs_per_album',
             'max_songs_per_album', 'skip_similar_duplicates'
         }

@@ -57,7 +57,8 @@ ANR monitors your hand-picked artist roster, detects new singles and albums with
   - Create separate tracking profiles (e.g., *Electronic Focus*, *Indie Radar*, *Heavy Rotation*), each with dedicated artist rosters, check intervals, custom lookback windows, and distinct target playlists.
 - **🛠️ Playlist Power Tools**:
   - Built-in multi-criteria playlist sorting (Release Date, Popularity, Duration, Date Added, Artist, Track Name).
-  - Faster bridge sorting with grouped moves, verified saved order, and recovery backups.
+  - Faster bridge sorting with grouped moves, verified saved order, and recovery backups per playlist.
+  - Exact duplicate removal keeps the original song occurrence and its added date.
   - Deep playlist deduplication and statistical health analyzers.
 - **🎨 Modern Aurora Terminal UI**:
   - Powered by Rich with animated gradient progress bars, structured dashboards, status tables, and keyboard-driven shortcuts.
@@ -236,6 +237,16 @@ already-sorted playlists need no writes. Heavily shuffled playlists can use a bu
 rewrite instead, which resets added dates. ANR verifies the saved order and retains
 a recovery backup if sorting fails. A playlist changed since the sort began is
 rejected before writing.
+
+Unresolved backups are kept until restored or explicitly discarded, including
+when another playlist is processed. Destructive tools stop if a required backup
+cannot be saved. Failed automatic release-date sorts are retried before more
+tracks are added, even when there are no new releases. Local files use row moves
+in bridge mode; destructive rewrites refuse local files.
+
+The bridge does not currently provide album popularity. If the low-popularity
+filter is enabled without that data, ANR reports an error and leaves release
+history unchanged instead of treating every album as zero popularity.
 
 ### Profile & Configuration
 

@@ -5,6 +5,8 @@ PlaylistSelector, PlaylistBackup, PlaylistRestorer.
 
 import json
 import time
+from collections import Counter
+from threading import RLock
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Set, Tuple, Callable
 
@@ -102,12 +104,15 @@ class PlaylistOperations:
             try:
                 raw_items = self.api._call(
                     "get_playlist_tracks", {"playlist_id": playlist_id}
-                ) or []
+                )
+                if not isinstance(raw_items, list):
+                    raise ValueError("Could not read complete playlist contents")
                 tracks = []
                 for item in raw_items:
                     track = PlaylistTrack.from_playlist_item(item)
-                    if track:
-                        tracks.append(track)
+                    if not track:
+                        raise ValueError("Playlist contains unreadable rows")
+                    tracks.append(track)
                 if progress_callback:
                     progress_callback(len(tracks), len(tracks))
                 return tracks
@@ -129,17 +134,21 @@ class PlaylistOperations:
                     offset=offset,
                 )
 
-                if total is None:
-                    total = response.get('total', 0)
-
-                items = response.get('items', [])
-                if not items:
-                    break
+                page_total = response.get('total')
+                items = response.get('items')
+                if not isinstance(items, list) or type(page_total) is not int or page_total < 0:
+                    raise ValueError("Could not read complete playlist contents")
+                if total is not None and total != page_total:
+                    raise ValueError("Playlist changed while reading")
+                total = page_total
+                if not items and offset < total:
+                    raise ValueError("Incomplete playlist page")
 
                 for item in items:
                     track = PlaylistTrack.from_playlist_item(item)
-                    if track:
-                        all_tracks.append(track)
+                    if not track:
+                        raise ValueError("Playlist contains unreadable rows")
+                    all_tracks.append(track)
 
                 if progress_callback:
                     progress_callback(len(all_tracks), total)
@@ -149,6 +158,8 @@ class PlaylistOperations:
                 else:
                     break
 
+            if len(all_tracks) != total:
+                raise ValueError("Incomplete playlist contents")
             return all_tracks
 
         except Exception as e:
@@ -272,6 +283,49 @@ class PlaylistOperations:
 
         return removed, failed
 
+    def remove_track_occurrences(self, playlist_uri, tracks, indices):
+        """Remove only selected rows, preserving the original duplicate copy."""
+        playlist_id = parse_spotify_uri(playlist_uri, "playlist")
+        selected = sorted(set(indices), reverse=True)
+        if not playlist_id or any(type(i) is not int or i < 0 or i >= len(tracks) for i in selected):
+            return 0, len(indices)
+        if not selected:
+            return 0, 0
+        expected = [t.uri for t in tracks]
+        if _is_bridge(self.api):
+            success = self.api.remove_playlist_rows(
+                playlist_id, [tracks[i].uid for i in selected], expected,
+                [t.uid for t in tracks],
+            )
+            return (len(selected), 0) if success else (0, len(selected))
+
+        removed = 0
+        try:
+            # Use a fresh snapshot and reject a scan that no longer describes
+            # the playlist. Descending batches keep remaining positions valid.
+            before = self.get_playlist_details(playlist_uri, skip_cache=True) or {}
+            current = self.get_playlist_tracks(playlist_uri)
+            after = self.get_playlist_details(playlist_uri, skip_cache=True) or {}
+            snapshot = after.get('snapshot_id')
+            if not snapshot or before.get('snapshot_id') != snapshot or [t.uri for t in current] != expected:
+                raise ValueError("Playlist changed since duplicate scan; retry")
+            for offset in range(0, len(selected), 100):
+                batch = selected[offset:offset + 100]
+                items = [{'uri': tracks[i].uri, 'positions': [i]} for i in batch]
+                snapshot = self.api.remove_playlist_occurrences(playlist_id, items, snapshot)
+                removed += len(batch)
+            selected_set = set(selected)
+            remaining = [t.uri for i, t in enumerate(tracks) if i not in selected_set]
+            if [t.uri for t in self.get_playlist_tracks(playlist_uri)] != remaining:
+                raise ValueError("Spotify did not save the requested duplicate removal")
+            return removed, 0
+        except Exception as e:
+            print_error(f"Could not remove duplicate rows: {e}")
+            # Verification failures remain failures even if all requests ran.
+            return removed, max(1, len(selected) - removed)
+        finally:
+            self.api.clear_cache(f"playlist:{playlist_id}")
+
     def remove_tracks_by_artist(
         self,
         playlist_uri: str,
@@ -365,6 +419,9 @@ class PlaylistOperations:
                 return success
 
             # ---- Standard spotipy path -------------------------------------
+            if any(uri.startswith('spotify:local:') for uri in track_uris):
+                print_error("Spotify Web API cannot rewrite local files; playlist unchanged")
+                return False
             first_batch = track_uris[:API_LIMITS["PLAYLIST_BATCH_SIZE"]]
 
             self.api._rate_limit()
@@ -704,14 +761,36 @@ class PlaylistBackup:
     """Manages playlist backups for recovery from failed operations."""
 
     BACKUP_FILE = CONFIG_DIR / "playlist_backup.json"
-    MAX_AGE_HOURS = 24
+    _lock = RLock()
+
+    @classmethod
+    def _read_backups(cls):
+        if not cls.BACKUP_FILE.exists():
+            return []
+        with open(cls.BACKUP_FILE, 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+        # Read backups written by older versions without changing their URIs.
+        backups = data.get('backups') if isinstance(data, dict) and 'backups' in data else [data]
+        if not isinstance(backups, list) or any(
+            not isinstance(b, dict) or not isinstance(b.get('playlist_uri'), str)
+            or not isinstance(b.get('track_uris'), list)
+            or not all(isinstance(uri, str) for uri in b['track_uris'])
+            for b in backups
+        ):
+            raise ValueError("Invalid playlist backup data")
+        return [b for b in backups if b.get('status') == 'in_progress']
+
+    @classmethod
+    def _write_backups(cls, backups):
+        if backups:
+            atomic_write_json(cls.BACKUP_FILE, {'backups': backups})
+        elif cls.BACKUP_FILE.exists():
+            cls.BACKUP_FILE.unlink()
 
     @classmethod
     def create(cls, playlist_uri: str, playlist_name: str, track_uris: List[str], operation: str) -> bool:
         """Create a backup before destructive operation."""
         try:
-            ensure_config_dir()
-
             backup = {
                 'playlist_uri': playlist_uri,
                 'playlist_name': playlist_name,
@@ -722,7 +801,19 @@ class PlaylistBackup:
                 'status': 'in_progress'
             }
 
-            atomic_write_json(cls.BACKUP_FILE, backup)
+            with cls._lock:
+                backups = cls._read_backups()
+                existing = next((b for b in backups if b['playlist_uri'] == playlist_uri), None)
+                if existing:
+                    same_rows = existing['track_uris'] == track_uris
+                    sort_retry = (operation.startswith('sort_by_')
+                                  and existing.get('operation', '').startswith('sort_by_')
+                                  and Counter(existing['track_uris']) == Counter(track_uris))
+                    if same_rows or sort_retry:
+                        return True  # Keep the original recovery data.
+                    raise ValueError("Unresolved backup for this playlist; restore or discard it before changing tracks")
+                backups.append(backup)
+                cls._write_backups(backups)
 
             return True
 
@@ -731,39 +822,32 @@ class PlaylistBackup:
             return False
 
     @classmethod
-    def get_pending(cls) -> Optional[Dict]:
-        """Get pending backup if exists and not expired."""
-        if not cls.BACKUP_FILE.exists():
-            return None
-
+    def get_pending_all(cls) -> List[Dict]:
+        """Keep every unresolved backup until explicitly completed/discarded."""
         try:
-            with open(cls.BACKUP_FILE, 'r', encoding='utf-8') as f:
-                backup = json.load(f)
-
-            age_hours = (time.time() - backup.get('created_at', 0)) / 3600
-            if age_hours > cls.MAX_AGE_HOURS:
-                cls.discard()
-                return None
-
-            if backup.get('status') != 'in_progress':
-                return None
-
-            return backup
-
-        except Exception:
-            return None
+            with cls._lock:
+                return cls._read_backups()
+        except Exception as e:
+            print_warning(f"Could not read playlist backups: {e}")
+            return []
 
     @classmethod
-    def complete(cls):
-        """Mark operation as complete and remove backup."""
-        if cls.BACKUP_FILE.exists():
-            cls.BACKUP_FILE.unlink()
+    def get_pending(cls, playlist_uri=None) -> Optional[Dict]:
+        return next((b for b in cls.get_pending_all()
+                     if playlist_uri is None or b['playlist_uri'] == playlist_uri), None)
 
     @classmethod
-    def discard(cls):
+    def complete(cls, playlist_uri=None):
+        """Remove only the resolved playlist's backup."""
+        with cls._lock:
+            backups = cls._read_backups()
+            target = playlist_uri or (backups[0]['playlist_uri'] if backups else None)
+            cls._write_backups([b for b in backups if b['playlist_uri'] != target])
+
+    @classmethod
+    def discard(cls, playlist_uri=None):
         """Discard backup without restoring."""
-        if cls.BACKUP_FILE.exists():
-            cls.BACKUP_FILE.unlink()
+        cls.complete(playlist_uri)
 
     @classmethod
     def get_age_string(cls, backup: Dict) -> str:
@@ -791,10 +875,12 @@ class PlaylistRestorer:
 
     def check_and_offer_restore(self) -> bool:
         """Check for pending backup and offer to restore."""
-        backup = PlaylistBackup.get_pending()
-        if not backup:
-            return False
+        resolved = False
+        for backup in PlaylistBackup.get_pending_all():
+            resolved = self._offer_restore(backup) or resolved
+        return resolved
 
+    def _offer_restore(self, backup) -> bool:
         age = PlaylistBackup.get_age_string(backup)
 
         print_warning(f"\nInterrupted operation detected!")
@@ -819,7 +905,7 @@ class PlaylistRestorer:
         if choice == 'restore':
             return self.restore(backup)
         elif choice == 'discard':
-            PlaylistBackup.discard()
+            PlaylistBackup.discard(backup['playlist_uri'])
             print_success("Backup discarded")
             return True
         else:
@@ -848,7 +934,7 @@ class PlaylistRestorer:
             )
 
         if success:
-            PlaylistBackup.complete()
+            PlaylistBackup.complete(playlist_uri)
             print_success(f"Restored {len(track_uris)} tracks!")
             return True
         else:

@@ -344,6 +344,20 @@ class BridgeAPI:
         except SpotifyAPIError:
             return False
 
+    def remove_playlist_rows(self, playlist_id, row_uids, expected_uris, expected_uids):
+        try:
+            response = self._call("remove_playlist_rows", {
+                "playlist_id": playlist_id, "row_uids": row_uids,
+                "expected_uris": expected_uris, "expected_uids": expected_uids,
+            }, timeout=120.0)
+            if not (response or {}).get('success'):
+                print_warning((response or {}).get('error', 'Could not remove duplicate rows'))
+                return False
+            return True
+        except SpotifyAPIError as e:
+            print_warning(str(e))
+            return False
+
     def add_tracks_to_playlist(self, playlist_id: str, track_uris: List[str]) -> bool:
         """Add tracks to a playlist. Returns True on success."""
         if not track_uris:

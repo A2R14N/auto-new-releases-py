@@ -131,6 +131,7 @@ class ProfileManager:
             max_songs=source_profile.max_songs,
             limit_songs_per_album=source_profile.limit_songs_per_album,
             max_songs_per_album=source_profile.max_songs_per_album,
+            skip_similar_duplicates=source_profile.skip_similar_duplicates,
         )
 
         self.config.profiles.append(new_profile)

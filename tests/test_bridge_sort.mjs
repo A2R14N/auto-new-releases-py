@@ -34,6 +34,68 @@ function fixture(count = 20) {
         params(wanted=original){return {playlist_id:'test',track_uris:wanted.map(x=>x.uri),track_uids:wanted.map(x=>x.uid),expected_uris:original.map(x=>x.uri),expected_uids:original.map(x=>x.uid)};},original};
 }
 
+test('duplicate removal preserves the original UID and added date',async()=>{
+    const f=fixture(27), p=f.params();
+    const result=await f.handlers.remove_playlist_rows({playlist_id:'test',row_uids:['row-13'],expected_uris:p.expected_uris,expected_uids:p.expected_uids});
+    assert.equal(result.success,true);
+    assert.ok(f.rows.some(row=>row.uid==='row-0'&&row.addedAt==='original'));
+    assert.ok(!f.rows.some(row=>row.uid==='row-13'));
+    assert.equal(f.rows.filter(row=>row.uri==='spotify:track:0').length,2);
+});
+test('duplicate removal reads all pages and batches only selected UIDs',async()=>{
+    const f=fixture(1201),p=f.params(),selected=f.original.slice(13).map(row=>row.uid);
+    const result=await f.handlers.remove_playlist_rows({playlist_id:'test',row_uids:selected,expected_uris:p.expected_uris,expected_uids:p.expected_uids});
+    assert.equal(result.success,true);
+    assert.deepEqual(f.rows.map(row=>row.uid),f.original.slice(0,13).map(row=>row.uid));
+    assert.equal(f.calls.filter(call=>call==='remove').length,12);
+});
+test('duplicate removal rejects stale scans, unknown and repeated UIDs without writes',async()=>{
+    for(const mutate of [p=>p.expected_uids[0]='changed',p=>p.row_uids=['missing'],p=>p.row_uids=['row-13','row-13'],p=>p.expected_uris.pop()]){
+        const f=fixture(),base=f.params(),p={playlist_id:'test',row_uids:['row-13'],expected_uris:base.expected_uris,expected_uids:base.expected_uids};
+        mutate(p);
+        assert.equal((await f.handlers.remove_playlist_rows(p)).success,false);
+        assert.equal(f.calls.includes('remove'),false);
+    }
+});
+test('silent or failed duplicate writes retain an error response',async()=>{
+    for(const mode of ['silent','throw']){
+        const f=fixture(),p=f.params();
+        f.api.remove=async()=>{if(mode==='throw')throw Error('Remove failed');};
+        assert.equal((await f.handlers.remove_playlist_rows({playlist_id:'test',row_uids:['row-13'],expected_uris:p.expected_uris,expected_uids:p.expected_uids})).success,false);
+        assert.equal(f.rows.length,20);
+    }
+});
+test('failed or incomplete playlist reads propagate instead of returning an empty playlist',async()=>{
+    for(const mode of ['failed','partial','unreadable']){
+        const f=fixture();
+        f.api.getContents=async()=>{
+            if(mode==='failed')throw Error('Offline');
+            return {items:mode==='partial'?[]:[{uri:'spotify:track:a'}],totalLength:20};
+        };
+        await assert.rejects(f.handlers.get_playlist_tracks({playlist_id:'test'}));
+        assert.equal(f.calls.includes('remove'),false);
+    }
+});
+test('local files use row moves even when rewriting would be cheaper',async()=>{
+    const f=fixture(20);
+    f.original[0].uri='spotify:local:artist:album:track:100';
+    const result=await f.handlers.reorder_playlist_tracks(f.params([...f.original].reverse()));
+    assert.equal(result.success,true);
+    assert.equal(result.strategy,'move');
+    assert.equal(f.calls.includes('remove'),false);
+    assert.equal(f.calls.includes('add'),false);
+    assert.equal(f.rows.at(-1).uid,'row-0');
+});
+test('missing row moves cannot destructively rewrite a local file',async()=>{
+    const f=fixture(20);
+    f.original[0].uri='spotify:local:artist:album:track:100';
+    delete f.api.move;
+    const result=await f.handlers.reorder_playlist_tracks(f.params([...f.original].reverse()));
+    assert.equal(result.success,false);
+    assert.equal(f.calls.includes('remove'),false);
+    assert.equal(f.calls.includes('add'),false);
+});
+
 test('large nearly sorted playlist uses one move and preserves duplicates and dates',async()=>{
     const f=fixture(1201),wanted=[...f.original.slice(-10),...f.original.slice(0,-10)];
     const result=await f.handlers.reorder_playlist_tracks(f.params(wanted));

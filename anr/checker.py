@@ -21,7 +21,7 @@ from .output import (
 from .models import Artist, Profile
 from .api import SpotifyAPI, SpotifyAPIError, ReleaseFetcher
 from .config import ConfigManager
-from .playlist import PlaylistOperations
+from .playlist import PlaylistOperations, PlaylistBackup
 from .filters import RemixDetector, ReleaseDateFilter
 
 
@@ -224,6 +224,24 @@ class ReleaseChecker:
             total_artists=len(profile.artists)
         )
 
+        def apply_sort():
+            notify('sorting')
+            if progress_callback:
+                progress_callback(CheckProgress(phase='sorting', message='Sorting playlist by release date'))
+            if not silent:
+                print_activity("Sorting playlist by release date")
+            try:
+                sort_result = PlaylistTools(self.api, self.playlist_ops).sorter.sort_by_release_date(profile.playlist_uri)
+                if not sort_result.success:
+                    raise SpotifyAPIError(sort_result.error_message)
+                return True
+            except Exception as sort_error:
+                result.status = CheckStatus.PARTIAL
+                message = f"Playlist sort failed: {sort_error}"
+                result.error_message = "; ".join(part for part in (result.error_message, message) if part)
+                print_warning(message)
+                return False
+
         if not profile.playlist_uri:
             result.status = CheckStatus.ERROR
             result.error_message = "No playlist configured"
@@ -240,6 +258,22 @@ class ReleaseChecker:
             notify('start')
             if progress_callback:
                 progress_callback(CheckProgress(phase='init', message='Fetching existing playlist tracks'))
+
+            if profile.sort_by_date and not dry_run and not profile.pending_sort:
+                pending_backup = PlaylistBackup.get_pending(profile.playlist_uri)
+                if pending_backup and pending_backup.get('operation') == 'sort_by_release_date':
+                    profile.pending_sort = True
+                    self.config_manager.save()
+
+            # Finish a previously failed sort before adding anything else.
+            # Its original recovery backup must survive any partial rewrite.
+            if profile.sort_by_date and profile.pending_sort and not dry_run:
+                if not apply_sort():
+                    result.duration_seconds = time.time() - start_time
+                    notify('partial')
+                    return result
+                profile.pending_sort = False
+                self.config_manager.save()
 
             existing_tracks = self.playlist_ops.get_playlist_tracks(profile.playlist_uri)
             existing_uris = {t.uri for t in existing_tracks}
@@ -335,7 +369,7 @@ class ReleaseChecker:
 
                     album_tracks = album_details.get('tracks', {}).get('items', [])
                     album_popularity = album_details.get('popularity', 0)
-                    if profile.skip_low_popularity and isinstance(self.api, SpotifyAPI) and album_details.get('popularity') is None:
+                    if profile.skip_low_popularity and album_details.get('popularity') is None:
                         raise SpotifyAPIError("Spotify did not provide album popularity. Disable the low-popularity filter for this profile.")
 
                     if profile.skip_long_albums and len(album_tracks) > profile.max_songs:
@@ -481,31 +515,10 @@ class ReleaseChecker:
                     result.total_tracks_added = added
 
                 if profile.sort_by_date and added > 0:
-                    notify('sorting')
-                    if progress_callback:
-                        progress_callback(CheckProgress(phase='sorting', message='Sorting playlist by release date'))
-
-                    if not silent:
-                        print_activity("Sorting playlist by release date")
-
-                    try:
-                        from .tools import PlaylistTools
-                        tools = PlaylistTools(self.api, self.playlist_ops)
-                        sort_result = tools.sorter.sort_by_release_date(profile.playlist_uri)
-                        if not sort_result.success:
-                            result.status = CheckStatus.PARTIAL
-                            message = f"Playlist sort failed: {sort_result.error_message}"
-                            result.error_message = "; ".join(
-                                part for part in (result.error_message, message) if part
-                            )
-                            print_warning(message)
-                    except Exception as sort_error:
-                        result.status = CheckStatus.PARTIAL
-                        message = f"Playlist sort failed: {sort_error}"
-                        result.error_message = "; ".join(
-                            part for part in (result.error_message, message) if part
-                        )
-                        print_warning(message)
+                    profile.pending_sort = True
+                    self.config_manager.save()
+                    if apply_sort():
+                        profile.pending_sort = False
             else:
                 result.status = CheckStatus.NO_NEW
 
@@ -540,7 +553,7 @@ class ReleaseChecker:
 
                 # Keep failed artist reads due for retry. Successful releases
                 # remain tracked so retrying cannot add them a second time.
-                if not artist_errors:
+                if not artist_errors and failed == 0 and not (profile.sort_by_date and profile.pending_sort):
                     profile.last_check = processed_at
                 self.config_manager.save()
 
@@ -797,7 +810,7 @@ class ScheduledChecker:
 
             interval_seconds = profile.check_interval * 3600
 
-            if profile.last_check is None:
+            if profile.last_check is None or (profile.sort_by_date and profile.pending_sort):
                 due.append(profile)
             elif now - profile.last_check >= interval_seconds:
                 due.append(profile)
@@ -854,7 +867,7 @@ class ScheduledChecker:
                     next_check = profile.last_check + (profile.check_interval * 3600)
                     next_dt = datetime.fromtimestamp(next_check)
 
-                    if next_check <= now:
+                    if next_check <= now or (profile.sort_by_date and profile.pending_sort):
                         next_str = "[bold red]Due now[/]"
                         status = "[yellow]●[/]"
                     else:

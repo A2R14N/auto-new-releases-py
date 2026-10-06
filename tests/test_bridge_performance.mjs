@@ -45,6 +45,46 @@ function albumPage(offset, total = 205) {
         }))},
     }}};
 }
+
+function artistPage(offset,total=205,includeTotal=true){
+    return {data:{artistUnion:{discography:{all:{...(includeTotal?{totalCount:total}:{}),
+        items:Array.from({length:Math.max(0,Math.min(100,total-offset))},(_,i)=>({releases:{items:[{
+            uri:`spotify:album:${offset+i}`,type:(offset+i)%2?'SINGLE':'ALBUM',date:{isoString:'2026-10-01'},
+        }]}})),
+    }}}}};
+}
+test('artist discography reads every page before filtering groups',async()=>{
+    const offsets=[];
+    const f=fixture({request:async(definition,args)=>{offsets.push(args.offset);return artistPage(args.offset);}});
+    const albums=await f.handlers.get_artist_albums({artist_id:'a',include_groups:'single'});
+    assert.deepEqual(offsets,[0,100,200]);
+    assert.equal(albums.length,102);
+    assert.equal(albums.at(-1).id,'203');
+});
+test('artist pagination supports counts omitted by older clients',async()=>{
+    const offsets=[];
+    const f=fixture({request:async(definition,args)=>{offsets.push(args.offset);return artistPage(args.offset,105,false);}});
+    assert.equal((await f.handlers.get_artist_albums({artist_id:'a'})).length,105);
+    assert.deepEqual(offsets,[0,100]);
+});
+test('failed, empty, repeated or changed artist pages never return partial success',async()=>{
+    for(const mode of ['failed','empty','repeated','changed','malformed']){
+        const f=fixture({request:async(definition,args)=>{
+            if(args.offset){
+                if(mode==='failed')throw Error('Page failed');
+                if(mode==='malformed')return {};
+                if(mode==='repeated')return artistPage(0);
+                if(mode==='changed')return artistPage(args.offset,206);
+                return {data:{artistUnion:{discography:{all:{totalCount:205,items:[]}}}}};
+            }
+            return artistPage(0);
+        }});
+        await assert.rejects(f.handlers.get_artist_albums({artist_id:'a'}));
+        const batch=await f.handlers.get_artist_albums_batch({artist_ids:['a']});
+        assert.ok(batch['spotify:artist:a'].error);
+        assert.equal(batch['spotify:artist:a'].releases.length,0);
+    }
+});
 test('missing artist query uses installed bundle metadata once for concurrent and repeated reads', async () => {
     let assetReads=0, queryReads=0;
     const hash='a'.repeat(64);

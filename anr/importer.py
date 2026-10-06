@@ -88,6 +88,7 @@ class ProfileExporter:
             profile_data = profile.to_dict()
             if not include_tracked:
                 profile_data['tracked_releases'] = {}
+                profile_data['tracked_tracks'] = {}
 
             export_data = {
                 **ExportMetadata().to_dict(),
@@ -120,6 +121,7 @@ class ProfileExporter:
                 profile_data = profile.to_dict()
                 if not include_tracked:
                     profile_data['tracked_releases'] = {}
+                    profile_data['tracked_tracks'] = {}
                 profiles_data.append(profile_data)
                 total_artists += len(profile.artists)
 
@@ -198,7 +200,8 @@ class ProfileImporter:
 
     def _normalize_keys(self, data: Any) -> Any:
         if isinstance(data, dict):
-            return {self._camel_to_snake(k): self._normalize_keys(v) for k, v in data.items()}
+            return {(k if k.startswith('spotify:') else self._camel_to_snake(k)):
+                    self._normalize_keys(v) for k, v in data.items()}
         elif isinstance(data, list):
             return [self._normalize_keys(item) for item in data]
         return data
@@ -363,45 +366,12 @@ class ProfileImporter:
         return result
 
     def _create_profile_from_data(self, data: Dict, name: str) -> Profile:
-        profile_id = generate_id()
-        artists = [Artist.from_dict(a) for a in data.get('artists', []) if isinstance(a, dict)]
-
-        return Profile(
-            id=profile_id,
-            name=name,
-            artists=artists,
-            playlist_uri=data.get('playlist_uri', ''),
-            playlist_name=data.get('playlist_name', ''),
-            check_interval=data.get('check_interval', DEFAULT_VALUES['CHECK_INTERVAL']),
-            last_check=None,
-            tracked_releases=data.get('tracked_releases', {}),
-            days_to_check=data.get('days_to_check', DEFAULT_VALUES['DAYS_TO_CHECK']),
-            sort_by_date=data.get('sort_by_date', True),
-            skip_remixes=data.get('skip_remixes', False),
-            skip_low_popularity=data.get('skip_low_popularity', False),
-            min_popularity=data.get('min_popularity', DEFAULT_VALUES['MIN_POPULARITY']),
-            skip_long_albums=data.get('skip_long_albums', False),
-            max_songs=data.get('max_songs', DEFAULT_VALUES['MAX_SONGS']),
-            limit_songs_per_album=data.get('limit_songs_per_album', False),
-            max_songs_per_album=data.get('max_songs_per_album', DEFAULT_VALUES['MAX_SONGS_PER_ALBUM']),
-        )
+        return Profile.from_dict({**data, 'id': generate_id(), 'name': name, 'last_check': None})
 
     def _update_profile(self, profile: Profile, data: Dict):
-        profile.artists = [Artist.from_dict(a) for a in data.get('artists', []) if isinstance(a, dict)]
-        profile.playlist_uri = data.get('playlist_uri', profile.playlist_uri)
-        profile.playlist_name = data.get('playlist_name', profile.playlist_name)
-        profile.check_interval = data.get('check_interval', profile.check_interval)
-        profile.days_to_check = data.get('days_to_check', profile.days_to_check)
-        profile.sort_by_date = data.get('sort_by_date', profile.sort_by_date)
-        profile.skip_remixes = data.get('skip_remixes', profile.skip_remixes)
-        profile.skip_low_popularity = data.get('skip_low_popularity', profile.skip_low_popularity)
-        profile.min_popularity = data.get('min_popularity', profile.min_popularity)
-        profile.skip_long_albums = data.get('skip_long_albums', profile.skip_long_albums)
-        profile.max_songs = data.get('max_songs', profile.max_songs)
-        profile.limit_songs_per_album = data.get('limit_songs_per_album', profile.limit_songs_per_album)
-        profile.max_songs_per_album = data.get('max_songs_per_album', profile.max_songs_per_album)
-        if data.get('tracked_releases'):
-            profile.tracked_releases = data.get('tracked_releases', {})
+        updated = Profile.from_dict({**profile.to_dict(), **data, 'id': profile.id, 'name': profile.name})
+        for field_name in Profile.__dataclass_fields__:
+            setattr(profile, field_name, getattr(updated, field_name))
 
     def _generate_unique_name(self, base_name: str) -> str:
         existing_names = {p.name.lower() for p in self.config_manager.config.profiles}
