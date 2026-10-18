@@ -47,6 +47,8 @@ class Profile:
     playlist_name: str = ""
     check_interval: int = DEFAULT_VALUES["CHECK_INTERVAL"]
     last_check: Optional[float] = None
+    last_scan: Optional[float] = None
+    pending_artists: Dict[str, Dict] = field(default_factory=dict)
     tracked_releases: Dict[str, float] = field(default_factory=dict)
     tracked_tracks: Dict[str, float] = field(default_factory=dict)
     days_to_check: int = DEFAULT_VALUES["DAYS_TO_CHECK"]
@@ -74,6 +76,8 @@ class Profile:
             'playlistName': 'playlist_name',
             'checkInterval': 'check_interval',
             'lastCheck': 'last_check',
+            'lastScan': 'last_scan',
+            'pendingArtists': 'pending_artists',
             'trackedReleases': 'tracked_releases',
             'trackedTracks': 'tracked_tracks',
             'daysToCheck': 'days_to_check',
@@ -104,7 +108,7 @@ class Profile:
 
         valid_fields = {
             'id', 'name', 'playlist_uri', 'playlist_name', 'check_interval',
-            'last_check', 'tracked_releases', 'tracked_tracks', 'days_to_check',
+            'last_check', 'last_scan', 'pending_artists', 'tracked_releases', 'tracked_tracks', 'days_to_check',
             'sort_by_date', 'pending_sort', 'skip_remixes', 'skip_low_popularity', 'min_popularity',
             'skip_long_albums', 'max_songs', 'limit_songs_per_album',
             'max_songs_per_album', 'skip_similar_duplicates'

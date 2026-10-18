@@ -248,7 +248,8 @@ class WebAPITests(unittest.TestCase):
             result=checker.check_profile(profile,silent=True)
         self.assertEqual(CheckStatus.ERROR,result.status)
         self.assertIn('popularity',result.error_message)
-        manager.save.assert_not_called()
+        manager.save.assert_called_once()
+        self.assertTrue(profile.pending_artists)
         http.rows=['existing','new']
         result=PlaylistSorter(api,ops).sort_playlist('spotify:playlist:p',criteria=SortCriteria.POPULARITY,create_backup=False)
         self.assertFalse(result.success)
@@ -265,7 +266,8 @@ class WebAPITests(unittest.TestCase):
         self.assertEqual(CheckStatus.ERROR,result.status)
         self.assertIn('per-album popularity limit',result.error_message)
         self.assertTrue(all(c[0]=='GET' for c in http.calls))
-        manager.save.assert_not_called()
+        manager.save.assert_called_once()
+        self.assertTrue(profile.pending_artists)
 
     def test_initialization_selects_oauth_when_no_bridge_is_connected(self):
         _http, api, _ops = fixture()
@@ -297,8 +299,16 @@ class WebAPITests(unittest.TestCase):
         auth=SpotifyAuthManager(manager)
         client=Mock()
         client.current_user.return_value={'id':'user','display_name':'Test'}
-        with patch('anr.auth.SpotifyOAuth') as oauth, patch('anr.auth.spotipy.Spotify',return_value=client):
+        with patch('anr.auth.SpotifyOAuth') as oauth, patch('anr.auth.spotipy.Spotify',return_value=client) as spotify:
             self.assertTrue(auth.authenticate())
+        session = spotify.call_args.kwargs['requests_session']
+        retries = session.get_adapter('https://api.spotify.com').max_retries
+        self.assertTrue(retries.is_retry('GET', 503))
+        self.assertTrue(retries.is_retry('GET', 429, has_retry_after=True))
+        for method in ('POST', 'PUT', 'DELETE'):
+            self.assertFalse(retries.is_retry(method, 503))
+            self.assertFalse(retries.is_retry(method, 429, has_retry_after=True))
+        session.close()
         args=oauth.call_args.kwargs
         self.assertEqual('test-id',args['client_id'])
         self.assertEqual('test-secret',args['client_secret'])

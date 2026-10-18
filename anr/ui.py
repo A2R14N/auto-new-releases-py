@@ -77,7 +77,7 @@ def display_main_dashboard(config_manager: ConfigManager, ready: bool):
     profile_row.add_column()
     profile_row.add_column(justify="right")
     profile_row.add_row(
-        Text(profile.name, style="bold #38bdf8"),
+        Text(profile.name, style="bold #22d3ee"),
         Text("● Ready" if ready else "● Setup required",
              style="bold #1ed760" if ready else "bold yellow"),
     )
@@ -93,7 +93,7 @@ def display_main_dashboard(config_manager: ConfigManager, ready: bool):
 
     def add_action(key: str, label: str, detail: str = "", selected: bool = False):
         key_text = Text(f">{key}" if selected else f" {key}",
-                        style="bold #38bdf8" if selected else "bold #7dd3fc")
+                        style="bold #22d3ee" if selected else "bold #a5f3fc")
         label_text = Text(label, style="bold white" if selected else "white")
         detail_text = Text(detail, style="#1ed760" if selected and ready else "dim")
         actions.add_row(key_text, label_text, detail_text)
@@ -108,11 +108,11 @@ def display_main_dashboard(config_manager: ConfigManager, ready: bool):
     title = Text(APP_NAME, style="bold white")
     title.append(f"  v{APP_VERSION}", style="dim")
     footer = Text()
-    footer.append(" [S]", style="bold #7dd3fc")
+    footer.append(" [S]", style="bold #a5f3fc")
     footer.append(" Schedule     ", style="dim")
-    footer.append("[7]", style="bold #7dd3fc")
+    footer.append("[7]", style="bold #a5f3fc")
     footer.append(" Import / Export     ", style="dim")
-    footer.append("[Q]", style="bold #7dd3fc")
+    footer.append("[Q]", style="bold #a5f3fc")
     footer.append(" Quit", style="dim")
 
     body = Group(
@@ -164,8 +164,8 @@ def display_profiles_dashboard(config_manager: ConfigManager):
         active = profile.id == config_manager.config.active_profile_id
         artist_word = "artist" if len(profile.artists) == 1 else "artists"
         table.add_row(
-            Text(str(index), style="bold #38bdf8" if active else "bold #7dd3fc"),
-            Text(profile.name, style="bold #38bdf8" if active else "white"),
+            Text(str(index), style="bold #22d3ee" if active else "bold #a5f3fc"),
+            Text(profile.name, style="bold #22d3ee" if active else "white"),
             Text(f"{len(profile.artists)} {artist_word}", style="dim"),
             Text(profile.playlist_name or "Not configured", style="dim"),
             Text("Active" if active else "", style="bold #1ed760"),
@@ -176,7 +176,7 @@ def display_profiles_dashboard(config_manager: ConfigManager):
                        ("X", "Delete"), ("0", "Back")):
         if footer:
             footer.append("   ")
-        footer.append(f"[{key}]", style="bold #7dd3fc")
+        footer.append(f"[{key}]", style="bold #a5f3fc")
         footer.append(f" {label}", style="dim")
 
     body = Group(table, Rule(style="dim", characters="-"), footer)
@@ -241,7 +241,7 @@ def _print_menu(title: str, items: list, show_back: bool = True):
                 key, label, hint = item
                 if key:
                     line = Text(" ")
-                    line.append(f"{key:>2}", style="bold #7dd3fc")
+                    line.append(f"{key:>2}", style="bold #a5f3fc")
                     line.append("       ")
                     line.append(label, style="white")
                     if hint:
@@ -254,7 +254,7 @@ def _print_menu(title: str, items: list, show_back: bool = True):
 
         if show_back:
             sections.append(Rule(style="dim", characters="-"))
-            back = Text("  0", style="bold #7dd3fc")
+            back = Text("  0", style="bold #a5f3fc")
             back.append("       Back", style="dim")
             sections.append(back)
 
@@ -738,7 +738,7 @@ class ApplicationUI:
             from rich.text import Text
 
             t = Table.grid(expand=True, padding=(0, 1))
-            t.add_column(width=5, style="bold #7dd3fc")
+            t.add_column(width=5, style="bold #a5f3fc")
             t.add_column(style="white")
             t.add_column(justify="right")
 
@@ -748,9 +748,9 @@ class ApplicationUI:
                 elif enabled is False:
                     value_style = "dim"
                 else:
-                    value_style = "#38bdf8"
+                    value_style = "#22d3ee"
                 t.add_row(
-                    Text(f"[{key}]", style="bold #7dd3fc"),
+                    Text(f"[{key}]", style="bold #a5f3fc"),
                     label,
                     Text(str(value), style=value_style),
                 )

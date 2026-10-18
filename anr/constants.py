@@ -165,7 +165,7 @@ def print_warning(text: str):
 
 def print_info(text: str):
     """Print info message."""
-    print_colored(text, "blue")
+    print_colored(text, "#22d3ee")
 
 
 def clear_screen():

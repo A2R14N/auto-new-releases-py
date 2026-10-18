@@ -53,6 +53,56 @@ function artistPage(offset,total=205,includeTotal=true){
         }]}})),
     }}}}};
 }
+
+test('artist failures preserve HTTP status, Retry-After and page context', async () => {
+    const f = fixture({request: async () => {
+        throw Object.assign(new Error('HttpResponseError'), {
+            response: {status: 429, headers: {'retry-after': '600'}, body: {message: 'Slow down'}},
+        });
+    }});
+    const result = (await f.handlers.get_artist_albums_batch({artist_ids:['a']}))['spotify:artist:a'];
+    assert.equal(result.error_details.status, 429);
+    assert.equal(result.error_details.retry_after, 600);
+    assert.equal(result.error_details.retryable, true);
+    assert.match(result.error, /queryArtistDiscographyAll spotify:artist:a offset 0/);
+    assert.match(result.error, /HTTP 429/);
+    assert.match(result.error, /Slow down/);
+});
+
+test('permanent artist errors are distinguishable from temporary failures', async () => {
+    const f = fixture({request: async () => {
+        throw Object.assign(new Error('HttpResponseError'), {statusCode: 403});
+    }});
+    const result = (await f.handlers.get_artist_albums_batch({artist_ids:['a']}))['spotify:artist:a'];
+    assert.equal(result.error_details.status, 403);
+    assert.equal(result.error_details.retryable, false);
+});
+
+test('single RPC failures post structured metadata alongside legacy error text', async () => {
+    let posted;
+    const f = fixture({enabled:true, request:async () => {
+        throw Object.assign(new Error('HttpResponseError'), {status:503});
+    }, fetch:async (url, options) => {
+        if (url.endsWith('/status')) return {ok:true,json:async()=>({session_token:'token'})};
+        if (url.includes('/request')) return {ok:true,status:200,json:async()=>({id:'request',method:'get_album',params:{album_id:'a'}})};
+        if (url.endsWith('/response')) {posted=JSON.parse(options.body); return {ok:true,status:200};}
+        throw Error('Unexpected fetch');
+    }});
+    await f.tick();
+    assert.equal(posted.error_details.status,503);
+    assert.equal(posted.error_details.retryable,true);
+    assert.match(posted.error,/getAlbum spotify:album:a offset 0/);
+});
+
+test('failed track lookups never return URI-only successes for ranking', async () => {
+    const f = fixture({definitions:{getTrack:'track'},request:async()=>{throw Error('Network unavailable');}});
+    await assert.rejects(f.handlers.get_multiple_tracks({track_ids:['a','b']}),/Network unavailable/);
+});
+
+test('missing track play counts remain unavailable instead of becoming zero', async () => {
+    const f = fixture({definitions:{getTrack:'track'},request:async()=>({data:{trackUnion:{name:'Song'}}})});
+    assert.equal((await f.handlers.get_track({track_id:'a'})).popularity,null);
+});
 test('artist discography reads every page before filtering groups',async()=>{
     const offsets=[];
     const f=fixture({request:async(definition,args)=>{offsets.push(args.offset);return artistPage(args.offset);}});

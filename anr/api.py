@@ -4,6 +4,8 @@ ArtistSearcher, ReleaseFetcher, ProgressDisplay.
 """
 
 import time
+import math
+import re
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Callable
 
@@ -20,8 +22,37 @@ from .models import Artist
 
 
 class SpotifyAPIError(Exception):
-    """Custom exception for Spotify API errors."""
-    pass
+    """API failure with optional metadata for bounded read recovery."""
+
+    def __init__(self, message, *, http_status=None, retry_after=None, retryable=None):
+        super().__init__(message)
+        self.http_status = http_status if type(http_status) is int else None
+        self.retry_after = (float(retry_after) if isinstance(retry_after, (int, float))
+                            and math.isfinite(retry_after) and retry_after >= 0 else None)
+        self.retryable = retryable if isinstance(retryable, bool) else None
+
+    @classmethod
+    def from_bridge(cls, message, details=None):
+        details = details if isinstance(details, dict) else {}
+        return cls(message, http_status=details.get('status'),
+                   retry_after=details.get('retry_after'), retryable=details.get('retryable'))
+
+
+def transient_read_error(error):
+    """Never apply this policy to playlist mutations."""
+    explicit = getattr(error, 'retryable', None)
+    if explicit is not None:
+        return explicit
+    status = getattr(error, 'http_status', None)
+    if status is not None:
+        return status in (408, 429) or 500 <= status <= 599
+    message = str(error).lower()
+    statuses = re.findall(r'\b([45]\d\d)\b', message)
+    if statuses:
+        return all(int(code) in (408, 429) or 500 <= int(code) <= 599 for code in statuses)
+    return isinstance(error, (TimeoutError, ConnectionError)) or any(
+        token in message for token in ('httpresponseerror', 'network', 'timed out', 'timeout', 'connection reset')
+    )
 
 
 class SpotifyAPI:
@@ -96,8 +127,12 @@ class SpotifyAPI:
             elif e.http_status == 404:
                 raise SpotifyAPIError(f"{context}: Resource not found.")
             elif e.http_status == 429:
-                retry_after = int(e.headers.get('Retry-After', 5))
-                raise SpotifyAPIError(f"{context}: Rate limited. Try again in {retry_after} seconds.")
+                try:
+                    retry_after = max(0, float((e.headers or {}).get('Retry-After', 5)))
+                except (TypeError, ValueError):
+                    retry_after = 5
+                raise SpotifyAPIError(f"{context}: Rate limited. Try again in {retry_after:g} seconds.",
+                                      http_status=429, retry_after=retry_after)
             else:
                 raise SpotifyAPIError(f"{context}: Spotify error {e.http_status} - {e.msg}")
         else:
@@ -794,7 +829,7 @@ class ProgressDisplay:
             from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
             self._progress = Progress(
                 SpinnerColumn(),
-                TextColumn("[bold blue]{task.description}"),
+                TextColumn("[bold #22d3ee]{task.description}"),
                 BarColumn(),
                 TaskProgressColumn(),
                 TextColumn("[dim]{task.fields[status]}"),

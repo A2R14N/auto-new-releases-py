@@ -578,12 +578,12 @@ class ReleaseDateFilter:
     """Filters releases by date."""
 
     @staticmethod
-    def filter_by_days(releases: List[Dict], days_back: int) -> List[Dict]:
+    def filter_by_days(releases: List[Dict], days_back: int, *, cutoff=None) -> List[Dict]:
         """Filter releases to those within N days."""
         if days_back == 0:
             return releases
 
-        cutoff = datetime.now() - timedelta(days=days_back)
+        cutoff = cutoff if cutoff is not None else datetime.now() - timedelta(days=days_back)
         result = []
 
         for release in releases:

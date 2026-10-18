@@ -5,6 +5,9 @@ Spotify OAuth authentication.
 from typing import Optional, Tuple, Dict
 
 import spotipy
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from spotipy.oauth2 import SpotifyOAuth
 from spotipy.exceptions import SpotifyException
 
@@ -69,7 +72,16 @@ class SpotifyAuthManager:
                 open_browser=True
             )
 
-            self.sp = spotipy.Spotify(auth_manager=auth_manager)
+            # Keep read retries, but reconcile uncertain writes at the checker
+            # instead of automatically replaying POST/PUT/DELETE requests.
+            session = requests.Session()
+            retries = Retry(total=3, status=3, read=False,
+                allowed_methods=frozenset(['GET']),
+                status_forcelist=(429, 500, 502, 503, 504), backoff_factor=0.3)
+            adapter = HTTPAdapter(max_retries=retries)
+            session.mount('https://', adapter)
+            session.mount('http://', adapter)
+            self.sp = spotipy.Spotify(auth_manager=auth_manager, requests_session=session)
 
             # Test the connection
             self._current_user = self.sp.current_user()

@@ -308,6 +308,26 @@ global switch once if you want notifications.
 <a id="automation"></a>
 ## ⏰ Automation & Background Scheduling
 
+Checks keep four-artist batching. After the normal scan, ANR makes at most one
+additional read attempt for each artist with a temporary failure. Healthy scans
+have no extra delay. Longer Spotify cooldowns and permanent errors stay pending;
+the daemon normally revisits pending work after five minutes and honors
+`Retry-After` when available.
+
+An incomplete scan reports successful and pending artist counts. Recovery state
+is saved in the profile, including its original release-date cutoff. Until the
+next normal check interval, recovery reads only pending artists. Successful
+releases remain tracked, so an uncertain playlist addition is reconciled with
+current playlist contents before another write. A bridge recovery refreshes
+Spotify's playlist cache first. Dry runs do not change this state.
+The OAuth client retains automatic retries for reads and does not automatically
+replay playlist mutations after HTTP errors.
+
+Album failures are isolated so other releases can still complete. Shared releases
+are processed once per check, and a release is only completed after its required
+additions succeed. Per-album selection requires complete ranking data; unavailable
+data leaves the release pending rather than silently bypassing the limit.
+
 ### Daemon Mode
 
 Run ANR continuously in the background. It will automatically wake up and check profiles according to their individual `check_interval`:

@@ -4,6 +4,7 @@ processing them, and adding to playlists.
 """
 
 import time
+import math
 import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -19,9 +20,9 @@ from .output import (
     print_check_summary, print_profiles_summary, print_all_check_summary,
 )
 from .models import Artist, Profile
-from .api import SpotifyAPI, SpotifyAPIError, ReleaseFetcher
+from .api import SpotifyAPI, SpotifyAPIError, ReleaseFetcher, transient_read_error
 from .config import ConfigManager
-from .playlist import PlaylistOperations, PlaylistBackup
+from .playlist import PlaylistOperations, PlaylistBackup, _is_bridge
 from .filters import RemixDetector, ReleaseDateFilter
 
 
@@ -75,6 +76,7 @@ class ProfileCheckResult:
     status: CheckStatus
     total_artists: int = 0
     artists_checked: int = 0
+    artists_pending: int = 0
     artists_with_new: int = 0
     total_releases: int = 0
     total_tracks_added: int = 0
@@ -88,6 +90,8 @@ class ProfileCheckResult:
         """Get summary of check results."""
         if self.status == CheckStatus.ERROR:
             return f"Error: {self.error_message}"
+        if self.status == CheckStatus.PARTIAL:
+            return f"{self.artists_checked}/{self.total_artists} artists checked, {self.artists_pending} pending; added {self.total_tracks_added} tracks. {self.error_message}"
         if self.total_tracks_added == 0:
             return f"No new releases found for {self.artists_checked} artists"
         parts = [f"Added {self.total_tracks_added} tracks", f"from {self.artists_with_new} artists"]
@@ -104,7 +108,7 @@ class ProfileCheckResult:
             status_colors = {
                 CheckStatus.SUCCESS: "green",
                 CheckStatus.PARTIAL: "yellow",
-                CheckStatus.NO_NEW: "blue",
+                CheckStatus.NO_NEW: "#22d3ee",
                 CheckStatus.ERROR: "red",
                 CheckStatus.SKIPPED: "dim",
             }
@@ -128,7 +132,7 @@ class ProfileCheckResult:
             panel = console.print(Panel(
                 "\n".join(lines),
                 title=f"[bold]Check Results: {self.profile_name}[/]",
-                border_style=color
+                border_style="blue" if self.status == CheckStatus.NO_NEW else color
             ))
 
             if self.artist_results and any(r.tracks_added > 0 for r in self.artist_results):
@@ -205,6 +209,7 @@ class ReleaseChecker:
         progress_callback: Optional[ProgressCallback] = None,
         silent: bool = False,
         dry_run: bool = False,
+        recovery_due_only: bool = False,
     ) -> ProfileCheckResult:
         """Check a profile, optionally previewing without persistent mutations."""
         # Import here to avoid circular
@@ -275,287 +280,311 @@ class ReleaseChecker:
                 profile.pending_sort = False
                 self.config_manager.save()
 
-            existing_tracks = self.playlist_ops.get_playlist_tracks(profile.playlist_uri)
+            uncertain_write = any(isinstance(entry, dict)
+                and entry.get('playlist_uri') == profile.playlist_uri
+                and 'Playlist addition not confirmed' in entry.get('error', '')
+                for entry in (profile.pending_artists or {}).values())
+            if uncertain_write and _is_bridge(self.api):
+                existing_tracks = self.playlist_ops.get_playlist_tracks(profile.playlist_uri, refresh=True)
+            else:
+                existing_tracks = self.playlist_ops.get_playlist_tracks(profile.playlist_uri)
             existing_uris = {t.uri for t in existing_tracks}
-
             existing_signatures = set()
-            if getattr(profile, "skip_similar_duplicates", False):
-                for t in existing_tracks:
-                    existing_signatures.add(f"{t.name.lower()}|||{t.primary_artist.lower()}")
+            if profile.skip_similar_duplicates:
+                existing_signatures = {f"{t.name.lower()}|||{t.primary_artist.lower()}" for t in existing_tracks}
 
+            now = time.time()
+            artist_uris = {a.uri for a in profile.artists}
+            old_pending = {
+                uri: dict(entry) for uri, entry in (profile.pending_artists or {}).items()
+                if uri in artist_uris and isinstance(entry, dict)
+                and entry.get('playlist_uri') == profile.playlist_uri
+            }
+            full_scan = not old_pending or profile.last_scan is None or now - profile.last_scan >= profile.check_interval * 3600
+            artists = list(profile.artists) if full_scan else [a for a in profile.artists if a.uri in old_pending]
+            blocked = {a.uri: old_pending[a.uri] for a in artists if a.uri in old_pending and (
+                old_pending[a.uri].get('not_before', 0) > now or
+                (recovery_due_only and not full_scan and old_pending[a.uri].get('retry_at', 0) > now))}
+            artists = [a for a in artists if a.uri not in blocked]
+            result.total_artists = len(artists) + len(blocked)
             if not silent:
-                print_profile_counts(len(existing_uris), len(profile.artists))
+                print_profile_counts(len(existing_uris), len(artists))
                 print()
 
-            tracked_tracks = getattr(profile, "tracked_tracks", None) or {}
-            tracked_releases = getattr(profile, "tracked_releases", None) or {}
+            tracked_tracks = profile.tracked_tracks or {}
+            tracked_releases = profile.tracked_releases or {}
+            cutoffs = {}
+            for artist in artists:
+                cutoff = old_pending.get(artist.uri, {}).get('cutoff', now - profile.days_to_check * 86400 if profile.days_to_check else None)
+                if cutoff is not None and (not isinstance(cutoff, (int, float)) or not math.isfinite(cutoff)):
+                    cutoff = now - profile.days_to_check * 86400 if profile.days_to_check else None
+                cutoffs[artist.uri] = cutoff
 
-            all_new_tracks: List[str] = []
-            candidate_releases: Set[str] = set()
-            processed_releases: Set[str] = set()
-            filtered_tracks: Set[str] = set()
-            candidate_tracks: Set[str] = set()
-            prefetched_releases = {}
-            batch_read = getattr(self.release_fetcher, "get_artist_releases_batch", None)
+            all_new_tracks = []
+            candidate_tracks = set()
+            candidate_signatures = set()
+            candidate_releases = set()
+            processed_releases = set()
+            filtered_tracks = set()
+            completed_releases = set()
+            release_owners = {}
+            encountered_releases = set()
+            artist_reads = {}
+            failures = {}
+            failed_at = {}
+            scan_cooldown = 0.0
+            artist_results = {a.uri: ArtistCheckResult(artist=a, status=CheckStatus.SUCCESS) for a in artists}
 
-            for idx, artist in enumerate(profile.artists):
-                if progress_callback:
-                    progress_callback(CheckProgress(
-                        phase='artist',
-                        artist_current=idx + 1,
-                        artist_total=len(profile.artists),
-                        artist_name=artist.name,
-                        message=f"Checking: {artist.name}"
-                    ))
+            def signature(track):
+                names = track.get('artists') or []
+                primary = names[0].get('name', '') if names else ''
+                return f"{track.get('name', '').lower()}|||{primary.lower()}"
 
-                if not silent:
-                    _print_artist_progress(idx + 1, len(profile.artists), artist.name)
+            def process_release(release, artist):
+                uri = release.get('uri')
+                if not uri:
+                    raise SpotifyAPIError('Artist release is missing its URI')
+                release_owners.setdefault(uri, set()).add(artist.uri)
+                if uri in tracked_releases or uri in completed_releases:
+                    return
+                if uri not in encountered_releases:
+                    encountered_releases.add(uri)
+                    result.total_releases += 1
+                    artist_results[artist.uri].releases_found += 1
 
-                try:
-                    if idx % 4 == 0:
-                        prefetched_releases = {}
-                        if callable(batch_read):
-                            try:
-                                prefetched_releases = batch_read(
-                                    [a.uri for a in profile.artists[idx:idx + 4]]
-                                )
-                            except Exception:
-                                # An older bridge or failed batch transport can
-                                # still serve the existing single-artist calls.
-                                prefetched_releases = {}
-                    entry = prefetched_releases.get(artist.uri)
-                    if entry is None:
-                        all_releases = self.release_fetcher.get_artist_releases(artist.uri)
+                if scan_cooldown > time.monotonic():
+                    raise SpotifyAPIError('Spotify cooldown; release pending recovery',
+                        http_status=429, retry_after=scan_cooldown - time.monotonic())
+                album = self.api.get_album(uri)
+                if not isinstance(album, dict) or not isinstance(album.get('tracks', {}).get('items'), list):
+                    raise SpotifyAPIError(f'Could not read complete album {uri}', retryable=True)
+                tracks = album['tracks']['items']
+                if any(not isinstance(t, dict) or not t.get('uri') for t in tracks):
+                    raise SpotifyAPIError(f'Album contains unreadable tracks: {uri}')
+                popularity = album.get('popularity')
+                if profile.skip_low_popularity and popularity is None:
+                    raise SpotifyAPIError('Spotify did not provide album popularity. Disable the low-popularity filter for this profile.', retryable=False)
+                if ((profile.skip_long_albums and len(tracks) > profile.max_songs)
+                        or (profile.skip_low_popularity and popularity < profile.min_popularity)):
+                    processed_releases.add(uri)
+                    completed_releases.add(uri)
+                    artist_results[artist.uri].tracks_filtered += len(tracks)
+                    result.total_tracks_filtered += len(tracks)
+                    return
+
+                # Keep changes local until this release has complete selection data.
+                eligible = {}
+                rejected = set()
+                dependencies = False
+                filtered_count = 0
+                for track in tracks:
+                    track_uri = track['uri']
+                    key = signature(track)
+                    if track_uri in existing_uris or track_uri in tracked_tracks or track_uri in filtered_tracks:
+                        filtered_count += 1
+                    elif track_uri in candidate_tracks:
+                        dependencies = True
+                        filtered_count += 1
+                    elif profile.skip_similar_duplicates and key in existing_signatures:
+                        filtered_count += 1
+                    elif profile.skip_similar_duplicates and key in candidate_signatures:
+                        dependencies = True
+                        filtered_count += 1
+                    elif profile.skip_remixes and RemixDetector.is_remix_or_variant(track.get('name', ''), release.get('name', '')):
+                        rejected.add(track_uri)
+                        filtered_count += 1
+                    elif track_uri not in eligible:
+                        eligible[track_uri] = track
+                ordered = list(eligible.values())
+                if profile.limit_songs_per_album and len(ordered) > profile.max_songs_per_album:
+                    details = self.api.get_multiple_tracks(list(eligible))
+                    by_uri = {t.get('uri'): t for t in (details or []) if isinstance(t, dict)}
+                    if set(by_uri) != set(eligible):
+                        raise SpotifyAPIError(f'Incomplete track ranking data for {uri}', retryable=True)
+                    if any(type(t.get('popularity')) not in (int, float) or not math.isfinite(t['popularity']) for t in by_uri.values()):
+                        raise SpotifyAPIError('Spotify did not provide track popularity. Disable the per-album popularity limit for this profile.', retryable=False)
+                    ordered.sort(key=lambda t: by_uri[t['uri']]['popularity'], reverse=True)
+
+                selected = []
+                selected_signatures = set()
+                for track in ordered:
+                    key = signature(track)
+                    if profile.skip_similar_duplicates and key in selected_signatures:
+                        filtered_count += 1
+                    elif profile.limit_songs_per_album and len(selected) >= profile.max_songs_per_album:
+                        rejected.add(track['uri'])
+                        filtered_count += 1
                     else:
-                        if entry.get("error"):
-                            raise RuntimeError(entry["error"])
-                        all_releases = entry["releases"]
-                except Exception as artist_err:
-                    print_warning(f"    Could not check {artist.name}: {artist_err}")
-                    result.artist_results.append(ArtistCheckResult(
-                        artist=artist,
-                        status=CheckStatus.ERROR,
-                        error_message=str(artist_err)
-                    ))
-                    result.artists_checked += 1
-                    continue
-
-                recent_releases = ReleaseDateFilter.filter_by_days(all_releases, profile.days_to_check)
-                new_releases = [
-                    r for r in recent_releases
-                    if r.get('uri') not in tracked_releases
-                ]
-
-                result.total_releases += len(new_releases)
-
-                if not new_releases:
-                    result.artists_checked += 1
-                    continue
-
-                result.artists_with_new += 1
-                artist_tracks_added = 0
-                artist_tracks_filtered = 0
-
-                for release in new_releases:
-                    release_uri = release.get('uri')
-                    release_name = release.get('name', 'Unknown')
-
-                    if not silent:
-                        print_info(f"  Release: {release_name}")
-
-                    album_details = self.api.get_album(release_uri)
-                    if not album_details:
-                        continue
-
-                    album_tracks = album_details.get('tracks', {}).get('items', [])
-                    album_popularity = album_details.get('popularity', 0)
-                    if profile.skip_low_popularity and album_details.get('popularity') is None:
-                        raise SpotifyAPIError("Spotify did not provide album popularity. Disable the low-popularity filter for this profile.")
-
-                    if profile.skip_long_albums and len(album_tracks) > profile.max_songs:
-                        if not silent:
-                            print_warning(f"    Skipping album: too many tracks ({len(album_tracks)} > {profile.max_songs})")
-                        result.total_tracks_filtered += len(album_tracks)
-                        artist_tracks_filtered += len(album_tracks)
-                        if release_uri:
-                            processed_releases.add(release_uri)
-                        continue
-
-                    if profile.skip_low_popularity and album_popularity < profile.min_popularity:
-                        if not silent:
-                            print_warning(f"    Skipping album: low popularity ({album_popularity} < {profile.min_popularity})")
-                        result.total_tracks_filtered += len(album_tracks)
-                        artist_tracks_filtered += len(album_tracks)
-                        if release_uri:
-                            processed_releases.add(release_uri)
-                        continue
-
-                    tracks_to_add = []
-
-                    for track in album_tracks:
-                        track_uri = track.get('uri')
-                        track_name = track.get('name', '')
-
-                        if not track_uri:
-                            continue
-
-                        if track_uri in existing_uris:
-                            if not silent:
-                                print(f"    [in playlist] {track_name}")
-                            artist_tracks_filtered += 1
-                            result.total_tracks_filtered += 1
-                            continue
-
-                        if getattr(profile, 'skip_similar_duplicates', False):
-                            track_artists = track.get('artists', [])
-                            primary_artist = (track_artists[0].get('name', '') if track_artists else '').lower()
-                            if f"{track_name.lower()}|||{primary_artist}" in existing_signatures:
-                                if not silent:
-                                    print(f"    [similar duplicate] {track_name}")
-                                artist_tracks_filtered += 1
-                                result.total_tracks_filtered += 1
-                                continue
-
-                        if track_uri in tracked_tracks or track_uri in filtered_tracks:
-                            if not silent:
-                                print(f"    [previously processed] {track_name}")
-                            artist_tracks_filtered += 1
-                            result.total_tracks_filtered += 1
-                            continue
-
-                        if profile.skip_remixes:
-                            if RemixDetector.is_remix_or_variant(track_name, release_name):
-                                if not silent:
-                                    print(f"    [remix/variant] {track_name}")
-                                filtered_tracks.add(track_uri)
-                                artist_tracks_filtered += 1
-                                result.total_tracks_filtered += 1
-                                continue
-
-                        tracks_to_add.append(track_uri)
-                        if getattr(profile, 'skip_similar_duplicates', False):
-                            track_artists = track.get('artists', [])
-                            primary_artist = (track_artists[0].get('name', '') if track_artists else '').lower()
-                            existing_signatures.add(f"{track_name.lower()}|||{primary_artist}")
-                            
-                        if not silent:
-                            print_success(f"    [adding] {track_name}")
-
-                    if profile.limit_songs_per_album and len(tracks_to_add) > profile.max_songs_per_album:
-                        track_details = self.api.get_multiple_tracks(tracks_to_add)
-                        if track_details:
-                            if isinstance(self.api, SpotifyAPI) and any(t.get('popularity') is None for t in track_details):
-                                raise SpotifyAPIError("Spotify did not provide track popularity. Disable the per-album popularity limit for this profile.")
-                            sorted_tracks = sorted(
-                                track_details,
-                                key=lambda t: t.get('popularity', 0),
-                                reverse=True
-                            )
-                            kept_uris = [
-                                t.get('uri') for t in sorted_tracks[:profile.max_songs_per_album]
-                                if t.get('uri')
-                            ]
-                            for t in sorted_tracks[profile.max_songs_per_album:]:
-                                uri = t.get('uri')
-                                if uri:
-                                    filtered_tracks.add(uri)
-                                    if not silent:
-                                        print_warning(f"    [album limit] {t.get('name', 'Unknown')}")
-
-                            filtered_count = len(tracks_to_add) - len(kept_uris)
-                            tracks_to_add = kept_uris
-                            artist_tracks_filtered += filtered_count
-                            result.total_tracks_filtered += filtered_count
-
-                    all_new_tracks.extend(tracks_to_add)
-                    candidate_tracks.update(tracks_to_add)
-                    artist_tracks_added += len(tracks_to_add)
-                    existing_uris.update(tracks_to_add)
-                    if release_uri:
-                        if tracks_to_add:
-                            candidate_releases.add(release_uri)
-                        else:
-                            processed_releases.add(release_uri)
-
-                result.artist_results.append(ArtistCheckResult(
-                    artist=artist,
-                    status=CheckStatus.SUCCESS,
-                    releases_found=len(new_releases),
-                    tracks_added=artist_tracks_added,
-                    tracks_filtered=artist_tracks_filtered
-                ))
-
-                result.artists_checked += 1
-
-            result.total_tracks_added = len(all_new_tracks)
-
-            added = 0
-            failed = 0
-            if all_new_tracks and dry_run:
-                result.total_tracks_added = len(all_new_tracks)
+                        selected.append(track)
+                        selected_signatures.add(key)
+                uris = [t['uri'] for t in selected]
+                all_new_tracks.extend(uris)
+                candidate_tracks.update(uris)
+                candidate_signatures.update(selected_signatures)
+                filtered_tracks.update(rejected)
+                artist_results[artist.uri].tracks_added += len(uris)
+                artist_results[artist.uri].tracks_filtered += filtered_count
+                result.total_tracks_filtered += filtered_count
+                if uris or dependencies:
+                    candidate_releases.add(uri)
+                else:
+                    processed_releases.add(uri)
+                completed_releases.add(uri)
                 if not silent:
-                    print_info(f"Dry run: {len(all_new_tracks)} tracks would be added")
-            elif all_new_tracks:
+                    print_info(f"  Release: {release.get('name', 'Unknown')}")
+                    for track in selected:
+                        print_success(f"    [adding] {track.get('name', '')}")
+
+            def scan_artist(artist, entry=None):
+                nonlocal scan_cooldown
+                errors = []
+                try:
+                    if artist.uri not in artist_reads:
+                        if entry is not None and entry.get('_exception') is not None:
+                            raise entry['_exception']
+                        if entry is not None and entry.get('error'):
+                            raise SpotifyAPIError.from_bridge(entry['error'], entry.get('error_details'))
+                        if entry is None and scan_cooldown > time.monotonic():
+                            raise SpotifyAPIError('Spotify cooldown; artist pending recovery',
+                                http_status=429, retry_after=scan_cooldown - time.monotonic())
+                        releases = entry['releases'] if entry is not None else self.release_fetcher.get_artist_releases(artist.uri)
+                        cutoff = cutoffs[artist.uri]
+                        artist_reads[artist.uri] = ReleaseDateFilter.filter_by_days(
+                            releases, 1 if cutoff is not None else 0,
+                            cutoff=datetime.fromtimestamp(cutoff) if cutoff is not None else None)
+                    for release in artist_reads[artist.uri]:
+                        try:
+                            process_release(release, artist)
+                        except Exception as error:
+                            errors.append(error)
+                except Exception as error:
+                    errors.append(error)
+                if errors:
+                    failures[artist.uri] = errors
+                    failed_at[artist.uri] = time.monotonic()
+                    for error in errors:
+                        if getattr(error, 'http_status', None) == 429:
+                            scan_cooldown = max(scan_cooldown, time.monotonic() + (getattr(error, 'retry_after', None) or 1))
+                else:
+                    failures.pop(artist.uri, None)
+
+            batch_read = getattr(self.release_fetcher, 'get_artist_releases_batch', None)
+            prefetched = {}
+            for idx, artist in enumerate(artists):
                 if progress_callback:
-                    progress_callback(CheckProgress(
-                        phase='adding',
-                        tracks_found=len(all_new_tracks),
-                        message=f'Adding {len(all_new_tracks)} tracks to playlist'
-                    ))
-
+                    progress_callback(CheckProgress(phase='artist', artist_current=idx + 1,
+                        artist_total=len(artists), artist_name=artist.name, message=f'Checking: {artist.name}'))
                 if not silent:
-                    noun = "track" if len(all_new_tracks) == 1 else "tracks"
-                    print_activity(f"Adding {len(all_new_tracks):,} new {noun} to playlist")
+                    _print_artist_progress(idx + 1, len(artists), artist.name)
+                if idx % 4 == 0:
+                    prefetched = {}
+                    if scan_cooldown > time.monotonic():
+                        error = SpotifyAPIError('Spotify cooldown; artist pending recovery',
+                            http_status=429, retry_after=scan_cooldown - time.monotonic())
+                        prefetched = {a.uri: {'_exception': error} for a in artists[idx:idx + 4]}
+                    elif callable(batch_read):
+                        try:
+                            prefetched = batch_read([a.uri for a in artists[idx:idx + 4]])
+                        except Exception as error:
+                            if 'unknown method' not in str(error).lower():
+                                prefetched = {a.uri: {'_exception': error} for a in artists[idx:idx + 4]}
+                scan_artist(artist, prefetched.get(artist.uri))
 
+            # A single failed-item pass, outside the original RPC. Healthy runs
+            # incur no waiting. Spotipy already owns its request retries.
+            retry_artists = []
+            shared_cooldown = 0
+            for artist in artists:
+                errors = failures.get(artist.uri, [])
+                if not errors:
+                    continue
+                delay = max((getattr(e, 'retry_after', None) or 1) for e in errors)
+                if any(getattr(e, 'http_status', None) == 429 for e in errors):
+                    shared_cooldown = max(shared_cooldown, failed_at[artist.uri] + delay)
+                if not isinstance(self.api, SpotifyAPI) and all(transient_read_error(e) for e in errors) and delay <= 2:
+                    retry_artists.append((artist, failed_at[artist.uri] + delay))
+            if retry_artists and shared_cooldown - time.monotonic() <= 2:
+                ready = max(shared_cooldown, max(ready for _, ready in retry_artists))
+                time.sleep(max(0, ready - time.monotonic()))
+                if not silent:
+                    print_activity(f'Retrying {len(retry_artists)} pending artists')
+                for artist, _ in retry_artists:
+                    if progress_callback:
+                        progress_callback(CheckProgress(phase='retry', artist_name=artist.name, message=f'Retrying: {artist.name}'))
+                    scan_artist(artist)
+
+            added = failed = 0
+            result.total_tracks_added = len(all_new_tracks) if dry_run else 0
+            if all_new_tracks and not dry_run:
+                if progress_callback:
+                    progress_callback(CheckProgress(phase='adding', tracks_found=len(all_new_tracks), message=f'Adding {len(all_new_tracks)} tracks to playlist'))
                 added, failed = self.playlist_ops.add_tracks(profile.playlist_uri, all_new_tracks)
-
-                if failed > 0:
+                result.total_tracks_added = added
+                if failed or added != len(all_new_tracks):
                     result.status = CheckStatus.PARTIAL
-                    result.error_message = f"Failed to add {failed} tracks"
-                    result.total_tracks_added = added
-
+                    result.error_message = f'Failed to confirm {len(all_new_tracks) - added} track additions'
+                    for uri in candidate_releases:
+                        for owner in release_owners[uri]:
+                            failures.setdefault(owner, []).append(SpotifyAPIError('Playlist addition not confirmed; pending recovery', retryable=False))
                 if profile.sort_by_date and added > 0:
                     profile.pending_sort = True
                     self.config_manager.save()
                     if apply_sort():
                         profile.pending_sort = False
-            else:
+            elif not all_new_tracks:
                 result.status = CheckStatus.NO_NEW
 
-            artist_errors = sum(r.status == CheckStatus.ERROR for r in result.artist_results)
-            if artist_errors:
-                result.status = CheckStatus.ERROR if artist_errors == len(profile.artists) else CheckStatus.PARTIAL
-                message = f"Could not check {artist_errors} of {len(profile.artists)} artists"
-                result.error_message = "; ".join(
-                    part for part in (result.error_message, message) if part
-                )
+            pending = dict(blocked)
+            cooldown = max((getattr(e, 'retry_after', None) or 0
+                            for errors in failures.values() for e in errors
+                            if getattr(e, 'http_status', None) == 429), default=0)
+            for artist in artists:
+                row = artist_results[artist.uri]
+                errors = failures.get(artist.uri, [])
+                if errors:
+                    row.status = CheckStatus.ERROR
+                    row.error_message = '; '.join(dict.fromkeys(str(e) for e in errors))
+                    print_warning(f'    Could not check {artist.name}: {row.error_message}')
+                    pending[artist.uri] = {
+                        'cutoff': cutoffs[artist.uri], 'playlist_uri': profile.playlist_uri,
+                        'error': row.error_message,
+                        'retry_at': time.time() + max(300, max(getattr(e, 'retry_after', None) or 0 for e in errors)),
+                        'not_before': time.time() + cooldown if cooldown else 0,
+                    }
+                result.artist_results.append(row)
+            result.artists_pending = len(pending)
+            result.artists_checked = result.total_artists - len(pending)
+            result.artists_with_new = sum(r.tracks_added > 0 for r in result.artist_results)
+            if pending:
+                result.status = CheckStatus.ERROR if len(pending) == result.total_artists and not all_new_tracks else CheckStatus.PARTIAL
+                message = f'Could not check {len(pending)} of {result.total_artists} artists; {result.artists_checked}/{result.total_artists} checked, {len(pending)} pending'
+                reasons = '; '.join(f'{a.name}: {artist_results[a.uri].error_message}' for a in artists if a.uri in pending)
+                if blocked:
+                    reasons += '; waiting for scheduled recovery or Spotify cooldown'
+                result.error_message = '; '.join(p for p in (result.error_message, message, reasons) if p)
+            if not silent:
+                print_info(f'{result.artists_checked}/{result.total_artists} artists checked, {len(pending)} pending')
 
             if not dry_run:
                 processed_at = time.time()
-                if profile.tracked_tracks is None:
-                    profile.tracked_tracks = {}
-                if profile.tracked_releases is None:
-                    profile.tracked_releases = {}
-                for track_uri in filtered_tracks:
-                    profile.tracked_tracks[track_uri] = processed_at
-                for release_uri in processed_releases:
-                    profile.tracked_releases[release_uri] = processed_at
-
-                # Candidate releases and tracks are durable only after the
-                # complete add succeeds. On partial failure they remain
-                # eligible for retry; already-added URIs will be detected from
-                # the playlist on the next run.
-                if all_new_tracks and failed == 0 and added == len(all_new_tracks):
-                    for track_uri in candidate_tracks:
-                        profile.tracked_tracks[track_uri] = processed_at
-                    for release_uri in candidate_releases:
-                        profile.tracked_releases[release_uri] = processed_at
-
-                # Keep failed artist reads due for retry. Successful releases
-                # remain tracked so retrying cannot add them a second time.
-                if not artist_errors and failed == 0 and not (profile.sort_by_date and profile.pending_sort):
+                profile.tracked_tracks = profile.tracked_tracks or {}
+                profile.tracked_releases = profile.tracked_releases or {}
+                for uri in filtered_tracks:
+                    profile.tracked_tracks[uri] = processed_at
+                for uri in processed_releases:
+                    profile.tracked_releases[uri] = processed_at
+                if all_new_tracks and not failed and added == len(all_new_tracks):
+                    for uri in candidate_tracks:
+                        profile.tracked_tracks[uri] = processed_at
+                    for uri in candidate_releases:
+                        profile.tracked_releases[uri] = processed_at
+                profile.pending_artists = pending
+                if full_scan:
+                    profile.last_scan = now
+                if not pending and not failed and not (profile.sort_by_date and profile.pending_sort):
                     profile.last_check = processed_at
                 self.config_manager.save()
+
 
             result.duration_seconds = time.time() - start_time
 
@@ -685,7 +714,7 @@ class InteractiveChecker:
 
             with Progress(
                 SpinnerColumn(),
-                TextColumn("[bold blue]{task.description}"),
+                TextColumn("[bold #22d3ee]{task.description}"),
                 AuroraBarColumn(),
                 TaskProgressColumn(),
                 TextColumn("[dim]{task.fields[status]}"),
@@ -702,11 +731,14 @@ class InteractiveChecker:
                         progress.update(
                             task,
                             completed=p.artist_current,
+                            total=p.artist_total,
                             description=f"Checking {p.artist_name}",
                             status=f"{p.artist_current}/{p.artist_total}"
                         )
                     elif p.phase == 'adding':
                         progress.update(task, description="Adding tracks", status=p.message)
+                    elif p.phase == 'retry':
+                        progress.update(task, description=f'Retrying {p.artist_name}', status='Pending recovery')
                     elif p.phase == 'sorting':
                         progress.update(task, description="Sorting playlist", status="")
 
@@ -716,6 +748,8 @@ class InteractiveChecker:
                 if p.phase == 'artist':
                     print(f"  [{p.artist_current}/{p.artist_total}] {p.artist_name}")
                 elif p.phase == 'adding':
+                    print(f"  {p.message}")
+                elif p.phase == 'retry':
                     print(f"  {p.message}")
 
             result = self.checker.check_profile(profile, simple_progress, silent=True)
@@ -809,10 +843,16 @@ class ScheduledChecker:
                 continue
 
             interval_seconds = profile.check_interval * 3600
-
-            if profile.last_check is None or (profile.sort_by_date and profile.pending_sort):
+            last_scan = profile.last_scan if profile.last_scan is not None else profile.last_check
+            pending_due = any(
+                isinstance(entry, dict) and entry.get('playlist_uri') == profile.playlist_uri
+                and max(entry.get('retry_at', 0), entry.get('not_before', 0)) <= now
+                for uri, entry in (profile.pending_artists or {}).items()
+                if any(a.uri == uri for a in profile.artists)
+            )
+            if last_scan is None or (profile.sort_by_date and profile.pending_sort) or pending_due:
                 due.append(profile)
-            elif now - profile.last_check >= interval_seconds:
+            elif now - last_scan >= interval_seconds:
                 due.append(profile)
 
         return due
@@ -835,7 +875,7 @@ class ScheduledChecker:
             if not silent:
                 print_info(f"Checking: {profile.name}")
 
-            result = self.checker.check_profile(profile, silent=silent)
+            result = self.checker.check_profile(profile, silent=silent, recovery_due_only=True)
             results.append(result)
 
             if not silent and result.total_tracks_added > 0:
@@ -878,6 +918,19 @@ class ScheduledChecker:
                     next_str = "[bold red]Due now[/]"
                     status = "[yellow]●[/]"
 
+                if profile.last_scan is not None:
+                    next_check = profile.last_scan + profile.check_interval * 3600
+                    retry_times = [max(entry.get('retry_at', 0), entry.get('not_before', 0))
+                        for uri, entry in (profile.pending_artists or {}).items()
+                        if isinstance(entry, dict) and entry.get('playlist_uri') == profile.playlist_uri
+                        and any(a.uri == uri for a in profile.artists)]
+                    if retry_times:
+                        next_check = min(next_check, min(retry_times))
+                    if profile.sort_by_date and profile.pending_sort:
+                        next_check = now
+                    next_str = '[bold red]Due now[/]' if next_check <= now else datetime.fromtimestamp(next_check).strftime('%Y-%m-%d %H:%M')
+                    status = f'[yellow]{len(retry_times)} pending[/]' if retry_times else '[green]●[/]'
+
                 if not profile.playlist_uri:
                     status = "[red]○[/]"
                     next_str = "[dim]No playlist[/]"
@@ -901,4 +954,6 @@ class ScheduledChecker:
                 print(f"    Interval: {profile.check_interval}h")
                 print(f"    Last check: {last_str}")
                 print(f"    Status: {status}")
+                if profile.pending_artists:
+                    print(f"    Pending artists: {len(profile.pending_artists)}")
             print()

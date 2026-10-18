@@ -422,7 +422,7 @@ class PlaylistDeduplicator:
             if result.success and result.duplicates_removed > 0:
                 color, status = "green", "SUCCESS"
             elif result.success and result.duplicates_found == 0:
-                color, status = "blue", "NO DUPLICATES"
+                color, status = "#22d3ee", "NO DUPLICATES"
             else:
                 color, status = "red", "ERROR"
             lines = [
@@ -432,7 +432,7 @@ class PlaylistDeduplicator:
             ]
             if result.error_message:
                 lines.append(f"[bold red]Error:[/] {result.error_message}")
-            console.print(Panel("\n".join(lines), title="[bold]Deduplication Results[/]", border_style=color))
+            console.print(Panel("\n".join(lines), title="[bold]Deduplication Results[/]", border_style="blue" if status == "NO DUPLICATES" else color))
         else:
             print(f"\n=== Deduplication Results ===\n  Found: {result.duplicates_found}\n  Removed: {result.duplicates_removed}")
             if result.error_message:

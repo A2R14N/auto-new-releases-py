@@ -42,6 +42,24 @@ test('duplicate removal preserves the original UID and added date',async()=>{
     assert.ok(!f.rows.some(row=>row.uid==='row-13'));
     assert.equal(f.rows.filter(row=>row.uri==='spotify:track:0').length,2);
 });
+
+test('uncertain-write recovery refreshes the playlist before reading its rows', async () => {
+    const f=fixture(5);
+    f.api.resync=async()=>{f.calls.push('resync');};
+    const rows=await f.handlers.get_playlist_tracks({playlist_id:'test',fresh:true});
+    assert.equal(rows.length,5);
+    assert.equal(f.calls[0],'resync');
+    const ordinary=fixture(5);
+    await ordinary.handlers.get_playlist_tracks({playlist_id:'test'});
+    assert.equal(ordinary.calls.includes('resync'),false);
+});
+
+test('uncertain-write recovery fails safely when client refresh is unavailable', async () => {
+    const f=fixture(5);
+    delete f.api.resync;
+    await assert.rejects(f.handlers.get_playlist_tracks({playlist_id:'test',fresh:true}), /Cannot refresh playlist/);
+    assert.equal(f.calls.includes('add'),false);
+});
 test('duplicate removal reads all pages and batches only selected UIDs',async()=>{
     const f=fixture(1201),p=f.params(),selected=f.original.slice(13).map(row=>row.uid);
     const result=await f.handlers.remove_playlist_rows({playlist_id:'test',row_uids:selected,expected_uris:p.expected_uris,expected_uids:p.expected_uids});

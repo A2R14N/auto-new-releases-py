@@ -287,6 +287,10 @@ class ProfileManager:
         release_count = len(profile.tracked_releases)
         track_count = len(getattr(profile, 'tracked_tracks', {}))
 
+        if mode in ('all', 'tracks', 'releases'):
+            profile.pending_artists = {}
+            profile.last_scan = None
+
         if mode == "all":
             profile.tracked_releases = {}
             profile.tracked_tracks = {}
@@ -314,6 +318,7 @@ class ProfileManager:
                 return False
 
         profile.artists.append(artist)
+        profile.last_scan = None
         self.save()
         print_success(f"Added '{artist.name}' to tracking")
         return True
@@ -323,6 +328,7 @@ class ProfileManager:
         for i, artist in enumerate(profile.artists):
             if artist.uri == artist_uri:
                 removed = profile.artists.pop(i)
+                profile.pending_artists.pop(artist_uri, None)
                 self.save()
                 print_success(f"Removed '{removed.name}' from tracking")
                 return True

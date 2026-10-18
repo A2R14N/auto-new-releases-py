@@ -4,9 +4,9 @@ import re
 
 from .constants import RICH_AVAILABLE, console
 
-ACTIVE = "#38bdf8"
-DETAIL = "#94a3b8"
-QUIET = "#64748b"
+ACTIVE = "#22d3ee"
+DETAIL = "#b0b0b0"
+QUIET = "#8a8a8a"
 COMPLETE = "#4ade80"
 NUMBER = "bold white"
 
@@ -58,7 +58,7 @@ def print_profile_header(title: str, position: str = "") -> None:
         console.print(heading, width=width)
         if position:
             console.print(Text(position, style=QUIET, justify="right"), width=width)
-    console.print("─" * width, style=QUIET)
+    console.print("─" * width, style="#64748b")
 
 
 def print_profile_counts(track_count: int, artist_count: int) -> None:

@@ -92,7 +92,8 @@ class PlaylistOperations:
     def get_playlist_tracks(
         self,
         playlist_uri: str,
-        progress_callback: Optional[Callable[[int, int], None]] = None
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        *, refresh: bool = False,
     ) -> List[PlaylistTrack]:
         """Get all tracks from a playlist."""
         playlist_id = parse_spotify_uri(playlist_uri, "playlist")
@@ -102,9 +103,10 @@ class PlaylistOperations:
         # ---- Bridge path: use the bridge's paginated fetch -----------------
         if _is_bridge(self.api):
             try:
-                raw_items = self.api._call(
-                    "get_playlist_tracks", {"playlist_id": playlist_id}
-                )
+                params = {"playlist_id": playlist_id}
+                if refresh:
+                    params['fresh'] = True
+                raw_items = self.api._call("get_playlist_tracks", params)
                 if not isinstance(raw_items, list):
                     raise ValueError("Could not read complete playlist contents")
                 tracks = []

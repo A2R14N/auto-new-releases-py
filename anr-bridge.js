@@ -149,6 +149,25 @@
     }
 
     let artistDefinitionPromise = null;
+    function describeError(error) {
+        const rawStatus = error?.http_status ?? error?.status ?? error?.statusCode ?? error?.response?.status;
+        const status = Number.isInteger(Number(rawStatus)) && Number(rawStatus) >= 400 && Number(rawStatus) <= 599 ? Number(rawStatus) : null;
+        const headers = error?.response?.headers ?? error?.headers;
+        const rawDelay = error?.retry_after ?? headers?.get?.('Retry-After') ?? headers?.['retry-after'] ?? headers?.['Retry-After'];
+        let retryAfter = rawDelay == null ? null : Number(rawDelay);
+        if (rawDelay != null && !Number.isFinite(retryAfter)) {
+            const date = Date.parse(rawDelay);
+            retryAfter = Number.isFinite(date) ? Math.max(0, (date - Date.now()) / 1000) : null;
+        }
+        if (!Number.isFinite(retryAfter) || retryAfter < 0) retryAfter = null;
+        const body = error?.response?.body ?? error?.body;
+        const detail = body?.error?.message ?? body?.message;
+        const baseMessage = error?.message || String(error);
+        const message = `${baseMessage}${status && !baseMessage.includes(`HTTP ${status}`) ? ` (HTTP ${status})` : ''}${detail ? `: ${String(detail).slice(0, 300)}` : ''}`;
+        return { message, status, retry_after: retryAfter,
+            retryable: status === null ? null : status === 408 || status === 429 || status >= 500 };
+    }
+
     async function graphqlRequest(name, variables) {
         const graphql = Spicetify.GraphQL;
         if (typeof graphql?.Request !== "function") throw new Error("Spotify GraphQL is not ready");
@@ -175,7 +194,16 @@
             definition = await artistDefinitionPromise;
         }
         if (!definition) throw new Error(`Spotify query '${name}' is not available in this client`);
-        return graphql.Request(definition, variables);
+        try {
+            return await graphql.Request(definition, variables);
+        } catch (error) {
+            const details = describeError(error);
+            const context = `${name} ${variables.uri || ''}${variables.offset == null ? '' : ` offset ${variables.offset}`}`;
+            const wrapped = new Error(`${context}: ${details.message}`);
+            wrapped.http_status = details.status;
+            wrapped.retry_after = details.retry_after;
+            throw wrapped;
+        }
     }
 
     async function fetchArtistAlbums(artist_id, include_groups = "album,single") {
@@ -367,7 +395,8 @@
                     try {
                         results[uri] = { releases: await fetchArtistAlbums(id, include_groups), error: null };
                     } catch (e) {
-                        results[uri] = { releases: [], error: e.message || String(e) };
+                        const details = describeError(e);
+                        results[uri] = { releases: [], error: details.message, error_details: details };
                     }
                 }));
             }
@@ -580,7 +609,7 @@
                 );
 
                 const t = res?.data?.trackUnion;
-                if (!t) return { uri, id };
+                if (!t) throw new Error(`Could not read track ${uri}`);
 
                 const releaseDate = parseDateFields(t.albumOfTrack?.date);
 
@@ -589,7 +618,7 @@
                     id,
                     name: t.name || "",
                     duration_ms: t.duration?.totalMilliseconds || 0,
-                    popularity: parseInt(t.playcount || "0", 10),
+                    popularity: t.playcount == null ? null : parseInt(t.playcount, 10),
                     track_number: t.trackNumber || 1,
                     album: t.albumOfTrack ? {
                         uri: t.albumOfTrack.uri,
@@ -604,14 +633,14 @@
                 };
             } catch (e) {
                 console.error(`[${EXTENSION_NAME}] get_track error:`, e);
-                return { uri, id };
+                throw e;
             }
         },
 
         async get_multiple_tracks({ track_ids }) {
             if (!track_ids?.length) return [];
             const results = await Promise.all(
-                track_ids.map(id => handlers.get_track({ track_id: id }).catch(() => null))
+                track_ids.map(id => handlers.get_track({ track_id: id }))
             );
 
             const tracks = results.filter(Boolean);
@@ -698,8 +727,12 @@
             }
         },
 
-        async get_playlist_tracks({ playlist_id }) {
+        async get_playlist_tracks({ playlist_id, fresh = false }) {
             const uri = `spotify:playlist:${playlist_id}`;
+            if (fresh) {
+                if (typeof Platform.PlaylistAPI.resync !== 'function') throw new Error('Cannot refresh playlist after an uncertain write');
+                await Platform.PlaylistAPI.resync(uri);
+            }
             try {
                 const items = await playlistRows(uri);
 
@@ -977,12 +1010,14 @@
 
             let result = null;
             let error = null;
+            let errorDetails = null;
             try {
                 const handler = handlers[request.method];
                 if (!handler) throw new Error(`Unknown method: ${request.method}`);
                 result = await handler(request.params ?? {});
             } catch (e) {
-                error = e.message ?? String(e);
+                errorDetails = describeError(e);
+                error = errorDetails.message;
                 console.error("error:", e);
             }
 
@@ -992,7 +1027,7 @@
                     "Content-Type": "application/json",
                     "X-ANR-Token": sessionToken,
                 },
-                body: JSON.stringify({ id: request.id, result, error }),
+                body: JSON.stringify({ id: request.id, result, error, error_details: errorDetails }),
                 signal: AbortSignal.timeout(5000),
             });
             if (!response.ok) {

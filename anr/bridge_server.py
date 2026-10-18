@@ -32,6 +32,12 @@ REQUEST_TIMEOUT = 30  # seconds to wait for extension to fulfil a request
 
 
 # Internal message types
+class BridgeResponseError(RuntimeError):
+    def __init__(self, message, details=None):
+        super().__init__(message)
+        self.details = details
+
+
 class _PendingRequest:
     """A request waiting to be picked up by the extension."""
 
@@ -42,6 +48,7 @@ class _PendingRequest:
         self._event = threading.Event()
         self._result: Any = None
         self._error: Optional[str] = None
+        self._error_details = None
         self._cancelled = False
 
     def wait(self, timeout: float = REQUEST_TIMEOUT) -> Any:
@@ -52,14 +59,15 @@ class _PendingRequest:
                 "Is Spotify open with the ANR Bridge extension loaded?"
             )
         if self._error:
-            raise RuntimeError(f"Bridge error in '{self.method}': {self._error}")
+            raise BridgeResponseError(f"Bridge error in '{self.method}': {self._error}", self._error_details)
         return self._result
 
-    def resolve(self, result: Any, error: Optional[str]):
+    def resolve(self, result: Any, error: Optional[str], error_details=None):
         if self._cancelled:
             return
         self._result = result
         self._error = error
+        self._error_details = error_details
         self._event.set()
 
     def to_dict(self) -> Dict:
@@ -205,7 +213,7 @@ class _BridgeHandler(BaseHTTPRequestHandler):
                 with srv._lock:
                     req = srv._pending.pop(req_id, None) if req_id else None
                 if req is not None:
-                    req.resolve(data.get("result"), data.get("error"))
+                    req.resolve(data.get("result"), data.get("error"), data.get("error_details"))
                 self._send_empty(200)
             except Exception as e:
                 self._send_json({"error": str(e)}, 400)

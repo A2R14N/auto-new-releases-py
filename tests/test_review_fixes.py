@@ -204,7 +204,8 @@ class ProfileStateTests(unittest.TestCase):
         self.assertEqual(CheckStatus.ERROR, result.status)
         self.assertEqual({}, profile.tracked_releases)
         self.assertEqual({}, profile.tracked_tracks)
-        manager.save.assert_not_called()
+        manager.save.assert_called_once()
+        self.assertTrue(profile.pending_artists)
         ops.add_tracks.assert_not_called()
 
     def test_failed_sort_retries_without_new_tracks_and_is_due_until_saved(self):

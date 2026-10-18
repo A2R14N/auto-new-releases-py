@@ -51,9 +51,11 @@ class BridgeAPI:
                 method, params, timeout=self._timeout if timeout is None else timeout
             )
         except TimeoutError as e:
-            raise SpotifyAPIError(str(e)) from e
+            # A running JS handler cannot be cancelled by the Python timeout.
+            # Defer recovery instead of immediately queueing another request.
+            raise SpotifyAPIError(str(e), retryable=False) from e
         except RuntimeError as e:
-            raise SpotifyAPIError(str(e)) from e
+            raise SpotifyAPIError.from_bridge(str(e), getattr(e, 'details', None)) from e
 
     # Status helpers (used by Application.initialize)
     def is_available(self) -> bool:

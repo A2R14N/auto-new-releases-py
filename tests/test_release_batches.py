@@ -30,6 +30,8 @@ class BatchAPI:
 
     def get_artist_albums(self, uri, include_groups="album,single"):
         self.singles.append(uri)
+        if self.mode == 'all_errors' or (self.mode == 'one_error' and uri.endswith(':b')):
+            raise SpotifyAPIError('429')
         return self.releases(uri)
 
     def get_album(self, uri):
@@ -80,7 +82,8 @@ class ArtistBatchTests(unittest.TestCase):
         self.assertIn('Could not check 1 of 6 artists', result.error_message)
         warning.assert_called_once_with('    Could not check b: 429')
         self.assertEqual(123, profile.last_check)
-        self.assertEqual(6, result.artists_checked)
+        self.assertEqual(5, result.artists_checked)
+        self.assertEqual(1, result.artists_pending)
         self.assertEqual(1, len([r for r in result.artist_results if r.status == CheckStatus.ERROR]))
         self.assertNotIn("spotify:album:b", profile.tracked_releases)
         self.assertNotIn("spotify:track:b", profile.tracked_tracks)
@@ -130,10 +133,12 @@ class ArtistBatchTests(unittest.TestCase):
         checker, _api, profile, calls = make_checker("album_error")
         with patch("anr.checker.traceback.print_exc"):
             result = checker.check_profile(profile, silent=True)
-        self.assertEqual(CheckStatus.ERROR, result.status)
-        self.assertEqual([], calls)
-        self.assertEqual({}, profile.tracked_releases)
-        self.assertEqual({}, profile.tracked_tracks)
+        self.assertEqual(CheckStatus.PARTIAL, result.status)
+        self.assertEqual(1, len(calls))
+        self.assertNotIn('spotify:album:b', profile.tracked_releases)
+        self.assertNotIn('spotify:track:b', profile.tracked_tracks)
+        self.assertIn('spotify:album:a', profile.tracked_releases)
+        self.assertIn('spotify:artist:b', profile.pending_artists)
 
     def test_non_bridge_fetcher_retains_single_artist_path(self):
         fetcher = ReleaseFetcher(SimpleNamespace(get_artist_albums=lambda uri, **_: [{"uri": uri}]))
