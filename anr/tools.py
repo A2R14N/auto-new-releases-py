@@ -9,6 +9,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Tuple, Callable
 
+from .output import open_block, data_table
 from .constants import (
     API_LIMITS, RICH_AVAILABLE, console,
     print_success, print_error, print_warning, print_info,
@@ -244,8 +245,8 @@ class PlaylistSorter:
         return self.sort_playlist(playlist_uri, SortCriteria.RELEASE_DATE, order, progress_callback)
 
     def display_sort_options(self):
-        print("\nSort Options:")
-        for i, label in [
+        from .views import display_menu
+        options = [
             (1, "Release Date (newest first)"), (2, "Release Date (oldest first)"),
             (3, "Popularity (most popular first)"), (4, "Popularity (least popular first)"),
             (5, "Track Name (A-Z)"), (6, "Track Name (Z-A)"),
@@ -253,9 +254,9 @@ class PlaylistSorter:
             (9, "Album Name (A-Z)"),
             (10, "Duration (longest first)"), (11, "Duration (shortest first)"),
             (12, "Date Added (newest first)"),
-        ]:
-            print(f"  {i:2}. {label}")
-        print("   0. Cancel\n")
+        ]
+        display_menu('Sort playlist', [(str(i), label, '') for i, label in options],
+                     section_titles=('Order',))
 
     def get_sort_from_choice(self, choice: int) -> Optional[Tuple[SortCriteria, SortOrder]]:
         options = {
@@ -329,7 +330,7 @@ class PlaylistDeduplicator:
 
         if RICH_AVAILABLE:
             from rich.prompt import Confirm
-            should_remove = Confirm.ask(f"Remove {len(duplicates)} duplicate(s)?", default=False)
+            should_remove = Confirm.ask(f"Remove {len(duplicates)} duplicate(s)?", default=False, console=console)
         else:
             response = input(f"Remove {len(duplicates)} duplicate(s)? [y/N]: ").strip().lower()
             should_remove = response in ('y', 'yes')
@@ -418,21 +419,20 @@ class PlaylistDeduplicator:
 
     def display_result(self, result: DedupeResult):
         if RICH_AVAILABLE:
-            from rich.panel import Panel
             if result.success and result.duplicates_removed > 0:
-                color, status = "green", "SUCCESS"
+                color, status = 'anr.success', "SUCCESS"
             elif result.success and result.duplicates_found == 0:
-                color, status = "#22d3ee", "NO DUPLICATES"
+                color, status = 'anr.text', "NO DUPLICATES"
             else:
-                color, status = "red", "ERROR"
+                color, status = 'anr.error', "ERROR"
             lines = [
                 f"[bold]Status:[/] [{color}]{status}[/]",
                 f"[bold]Duplicates Found:[/] {result.duplicates_found}",
-                f"[bold green]Removed:[/] {result.duplicates_removed}",
+                f"[anr.heading]Removed:[/] {result.duplicates_removed}",
             ]
             if result.error_message:
-                lines.append(f"[bold red]Error:[/] {result.error_message}")
-            console.print(Panel("\n".join(lines), title="[bold]Deduplication Results[/]", border_style="blue" if status == "NO DUPLICATES" else color))
+                lines.append(f"[anr.error]Error:[/] {result.error_message}")
+            console.print(open_block("[bold]Deduplication Results[/]", "\n".join(lines)))
         else:
             print(f"\n=== Deduplication Results ===\n  Found: {result.duplicates_found}\n  Removed: {result.duplicates_removed}")
             if result.error_message:
@@ -535,8 +535,6 @@ class PlaylistAnalyzer:
         name = playlist.get('name', 'Unknown') if playlist else 'Unknown'
 
         if RICH_AVAILABLE:
-            from rich.panel import Panel
-            from rich.table import Table
 
             lines = [
                 f"[bold]Total Tracks:[/] {stats.get('total_tracks', 0)}",
@@ -548,19 +546,19 @@ class PlaylistAnalyzer:
                 f"[bold]Exact Duplicates:[/] {stats.get('exact_duplicates', 0)}",
                 f"[bold]Similar Tracks:[/] {stats.get('similar_duplicates', 0)}",
             ]
-            console.print(Panel("\n".join(lines), title=f"[bold cyan]Playlist Analysis: {name}[/]", border_style="cyan"))
+            console.print(open_block(f"[anr.heading]Playlist Analysis: {name}[/]", "\n".join(lines)))
 
             if detailed and 'top_artists' in stats and stats['top_artists']:
-                table = Table(title="Top Artists", show_header=True, header_style="bold")
-                table.add_column("Artist", style="white")
+                table = data_table(title="Top Artists", show_header=True, header_style="bold")
+                table.add_column("Artist", style='anr.text')
                 table.add_column("Tracks", justify="right")
                 for artist, count in stats['top_artists'][:10]:
                     table.add_row(artist[:30], str(count))
                 console.print(table)
 
             if detailed and 'year_distribution' in stats and stats['year_distribution']:
-                table = Table(title="Release Years", show_header=True, header_style="bold")
-                table.add_column("Year", style="white")
+                table = data_table(title="Release Years", show_header=True, header_style="bold")
+                table.add_column("Year", style='anr.text')
                 table.add_column("Tracks", justify="right")
                 for year, count in stats['year_distribution'][:10]:
                     table.add_row(year, str(count))

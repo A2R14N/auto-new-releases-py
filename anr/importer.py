@@ -16,6 +16,7 @@ from .constants import (
     print_success, print_error, print_warning, print_info,
     DEFAULT_VALUES, atomic_write_json, generate_id,
 )
+from .output import open_block, data_table
 from .models import Artist, Profile
 from .config import ConfigManager
 
@@ -452,8 +453,6 @@ class ImportExportManager:
             return
 
         if RICH_AVAILABLE:
-            from rich.panel import Panel
-            from rich.table import Table
 
             lines = [
                 f"[bold]File:[/] {Path(file_path).name}",
@@ -462,11 +461,11 @@ class ImportExportManager:
                 f"[bold]Type:[/] {preview['type']}",
                 f"[bold]Total Artists:[/] {preview['total_artists']}",
             ]
-            console.print(Panel("\n".join(lines), title="[bold cyan]Import Preview[/]", border_style="cyan"))
+            console.print(open_block("[anr.heading]Import Preview[/]", "\n".join(lines)))
 
             if preview['profiles']:
-                table = Table(title="Profiles in File", show_header=True, header_style="bold")
-                table.add_column("Name", style="white")
+                table = data_table(title="Profiles in File", show_header=True, header_style="bold")
+                table.add_column("Name", style='anr.text')
                 table.add_column("Artists", justify="right")
                 table.add_column("Playlist")
                 for p in preview['profiles']:
@@ -493,7 +492,7 @@ class ImportExportMenu:
     def prompt(self, message: str, default: str = "") -> str:
         if RICH_AVAILABLE:
             from rich.prompt import Prompt
-            return Prompt.ask(message, default=default) if default else Prompt.ask(message)
+            return Prompt.ask(message, default=default, console=console) if default else Prompt.ask(message, console=console)
         else:
             prompt_text = f"{message} [{default}]: " if default else f"{message}: "
             result = input(prompt_text).strip()
@@ -502,7 +501,7 @@ class ImportExportMenu:
     def confirm(self, message: str, default: bool = False) -> bool:
         if RICH_AVAILABLE:
             from rich.prompt import Confirm
-            return Confirm.ask(message, default=default)
+            return Confirm.ask(message, default=default, console=console)
         else:
             suffix = " [Y/n]: " if default else " [y/N]: "
             result = input(message + suffix).strip().lower()
@@ -581,16 +580,17 @@ class ImportExportMenu:
 
         self.manager.display_preview(file_path)
 
-        print("\nHow should duplicate profiles be handled?")
-        print("  1. Skip - Keep existing, don't import duplicates")
-        print("  2. Replace - Overwrite existing with imported")
-        print("  3. Rename - Import with new name")
-        print("  0. Cancel\n")
+        from .views import display_menu
+        display_menu('Import profiles', [
+            ('1', 'Skip duplicates', 'Keep existing profiles'),
+            ('2', 'Replace duplicates', 'Overwrite existing profiles'),
+            ('3', 'Rename duplicates', 'Import with new names'),
+        ], section_titles=('Duplicate profiles',))
 
         try:
             if RICH_AVAILABLE:
                 from rich.prompt import IntPrompt
-                choice = IntPrompt.ask("Choice", default=1)
+                choice = IntPrompt.ask("Choice", default=1, console=console)
             else:
                 choice = int(input("Choice [1]: ").strip() or "1")
         except ValueError:

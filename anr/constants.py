@@ -14,6 +14,42 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+# Shared text roles for every menu, table, prompt, and CLI message.
+CONSOLE_STYLES = {
+    'anr.text': '#f5f5f7',
+    'anr.heading': 'bold #f5f5f7',
+    'anr.secondary': '#aeaeb4',
+    'anr.shortcut': '#2997ff',
+    'anr.accent': '#2997ff',
+    'anr.rule': '#48484d',
+    'anr.success': '#30d158',
+    'anr.warning': '#ff9f0a',
+    'anr.error': '#ff453a',
+    'prompt': '#f5f5f7',
+    'prompt.choices': '#2997ff',
+    'prompt.default': 'bold #f5f5f7',
+    'prompt.invalid': '#ff453a',
+    'prompt.invalid.choice': '#ff453a',
+    'progress.description': '#f5f5f7',
+    'progress.percentage': '#aeaeb4',
+    'progress.remaining': '#aeaeb4',
+    'progress.elapsed': '#aeaeb4',
+    'progress.download': '#aeaeb4',
+    'progress.filesize': '#aeaeb4',
+    'progress.filesize.total': '#aeaeb4',
+    'progress.speed': '#aeaeb4',
+    'bar.back': '#48484d',
+    'bar.complete': '#2997ff',
+    'bar.finished': '#2997ff',
+    'bar.pulse': '#2997ff',
+    'rule.line': '#48484d',
+    'rule.text': '#aeaeb4',
+    'table.border': '#48484d',
+    'table.header': 'bold #f5f5f7',
+    'table.title': 'bold #f5f5f7',
+    'panel.title': 'bold #f5f5f7',
+}
+
 # Third-party imports
 try:
     import spotipy
@@ -26,6 +62,7 @@ except ImportError:
 # Optional: rich for better terminal output
 try:
     from rich.console import Console
+    from rich.theme import Theme
     from rich.table import Table
     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
     from rich.prompt import Prompt, Confirm, IntPrompt
@@ -33,14 +70,14 @@ try:
     from rich.text import Text
     from rich import print as rprint
     RICH_AVAILABLE = True
-    console = Console()
+    console = Console(theme=Theme(CONSOLE_STYLES), style='anr.text', highlight=False)
 except ImportError:
     RICH_AVAILABLE = False
     console = None
 
 # CONSTANTS & CONFIGURATION
 APP_NAME = "Auto New Releases"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 CONFIG_DIR = Path.home() / ".config" / "auto-new-releases"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 CACHE_FILE = CONFIG_DIR / "cache.json"
@@ -139,33 +176,44 @@ def generate_id() -> str:
     return hashlib.md5(f"{time.time()}{os.urandom(8).hex()}".encode()).hexdigest()[:12]
 
 
-def print_colored(text: str, color: str = "white", bold: bool = False):
+def print_colored(text: str, color: str = "anr.text", bold: bool = False):
     """Print colored text, using rich if available, otherwise plain."""
     if RICH_AVAILABLE:
-        style = f"bold {color}" if bold else color
-        console.print(text, style=style)
+        line = Text(text, style=color)
+        if bold:
+            line.stylize('bold')
+        console.print(line)
     else:
         print(text)
 
 
+def _print_status(text: str, symbol: str, style: str):
+    if RICH_AVAILABLE:
+        line = Text(symbol + ' ', style=style)
+        line.append(text, style='anr.text')
+        console.print(line)
+    else:
+        print(f'{symbol} {text}')
+
+
 def print_success(text: str):
     """Print success message."""
-    print_colored(f"✓ {text}", "green", bold=True)
+    _print_status(text, '✓', 'anr.success')
 
 
 def print_error(text: str):
     """Print error message."""
-    print_colored(f"✗ {text}", "red", bold=True)
+    _print_status(text, '✗', 'anr.error')
 
 
 def print_warning(text: str):
     """Print warning message."""
-    print_colored(f"⚠ {text}", "yellow")
+    _print_status(text, '⚠', 'anr.warning')
 
 
 def print_info(text: str):
     """Print info message."""
-    print_colored(text, "#22d3ee")
+    print_colored(text, 'anr.secondary')
 
 
 def clear_screen():

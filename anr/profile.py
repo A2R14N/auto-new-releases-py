@@ -10,6 +10,7 @@ from .constants import (
     print_success, print_error, print_warning, print_info,
     generate_id, format_number,
 )
+from .output import open_block, data_table
 from .models import Artist, Profile, Config
 from .config import ConfigManager
 
@@ -160,16 +161,15 @@ class ProfileManager:
         profiles = self.list_profiles()
 
         if RICH_AVAILABLE:
-            from rich.table import Table
-            table = Table(title="Profiles", show_header=True, header_style="bold cyan")
-            table.add_column("#", style="dim", width=3)
-            table.add_column("Name", style="white")
+            table = data_table(title="Profiles", show_header=True, header_style='anr.heading')
+            table.add_column("#", style='anr.shortcut', width=3)
+            table.add_column("Name", style='anr.text')
             table.add_column("Artists", justify="right")
-            table.add_column("Playlist", style="dim")
+            table.add_column("Playlist", style='anr.secondary')
             table.add_column("Status", justify="center")
 
             for idx, (pid, name, artists, playlist, is_active) in enumerate(profiles, 1):
-                status = "[bold green]● Active[/]" if is_active else "[dim]○[/]"
+                status = "[anr.accent]●[/] Active" if is_active else "[anr.secondary]○[/]"
                 table.add_row(
                     str(idx),
                     name,
@@ -196,17 +196,16 @@ class ProfileManager:
             datetime.fromtimestamp(profile.last_check).strftime("%Y-%m-%d %H:%M")
 
         if RICH_AVAILABLE:
-            from rich.panel import Panel
             details = [
                 f"[bold]Name:[/] {profile.name}",
-                f"[bold]Status:[/] {'[green]Active[/]' if is_active else '[dim]Inactive[/]'}",
+                f"[bold]Status:[/] {'[anr.accent]●[/] Active' if is_active else '[anr.secondary]Inactive[/]'}",
                 f"[bold]Artists:[/] {len(profile.artists)}",
-                f"[bold]Playlist:[/] {profile.playlist_name or '[red]Not configured[/]'}",
+                f"[bold]Playlist:[/] {profile.playlist_name or '[anr.error]Not configured[/]'}",
                 f"[bold]Last Check:[/] {last_check}",
                 f"[bold]Tracked Releases:[/] {len(profile.tracked_releases)}",
                 f"[bold]Tracked Tracks:[/] {len(profile.tracked_tracks)}",
                 "",
-                "[bold cyan]Settings:[/]",
+                "[anr.heading]Settings:[/]",
                 f"  Check Interval: {profile.check_interval}h",
                 f"  Days to Check: {profile.days_to_check if profile.days_to_check > 0 else 'All time'}",
                 f"  Sort by Date: {'Yes' if profile.sort_by_date else 'No'}",
@@ -219,11 +218,7 @@ class ProfileManager:
                     + (f" ({profile.max_songs_per_album} max)" if profile.limit_songs_per_album else ""),
             ]
 
-            panel = Panel(
-                "\n".join(details),
-                title=f"[bold]Profile: {profile.name}[/]",
-                border_style="cyan"
-            )
+            panel = open_block(f"[bold]Profile: {profile.name}[/]", "\n".join(details))
             console.print(panel)
         else:
             print(f"\n=== Profile: {profile.name} ===")
@@ -362,16 +357,15 @@ class ProfileManager:
             return
 
         if RICH_AVAILABLE:
-            from rich.table import Table
-            table = Table(
+            table = data_table(
                 title=f"Tracked Artists ({len(artists)})",
                 show_header=True,
-                header_style="bold cyan"
+                header_style='anr.heading',
             )
-            table.add_column("#", style="dim", width=4)
-            table.add_column("Name", style="white")
+            table.add_column("#", style='anr.shortcut', width=4)
+            table.add_column("Name", style='anr.text')
             table.add_column("Followers", justify="right")
-            table.add_column("URI", style="dim")
+            table.add_column("URI", style='anr.secondary')
 
             for idx, artist in enumerate(artists, 1):
                 followers = format_number(artist.followers) if artist.followers else "Unknown"
@@ -415,7 +409,7 @@ class ProfileMenu:
         """Prompt user for input."""
         if RICH_AVAILABLE:
             from rich.prompt import Prompt
-            return Prompt.ask(message, default=default) if default else Prompt.ask(message)
+            return Prompt.ask(message, default=default, console=console) if default else Prompt.ask(message, console=console)
         else:
             prompt_text = f"{message} [{default}]: " if default else f"{message}: "
             result = input(prompt_text).strip()
@@ -425,7 +419,7 @@ class ProfileMenu:
         """Prompt user for confirmation."""
         if RICH_AVAILABLE:
             from rich.prompt import Confirm
-            return Confirm.ask(message, default=default)
+            return Confirm.ask(message, default=default, console=console)
         else:
             suffix = " [Y/n]: " if default else " [y/N]: "
             result = input(message + suffix).strip().lower()
@@ -439,7 +433,7 @@ class ProfileMenu:
             if RICH_AVAILABLE:
                 from rich.prompt import IntPrompt
                 try:
-                    value = IntPrompt.ask(message, default=default)
+                    value = IntPrompt.ask(message, default=default, console=console)
                 except KeyboardInterrupt:
                     return default
             else:

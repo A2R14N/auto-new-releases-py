@@ -138,7 +138,7 @@ class CLIHandler:
             return self._check_current(args.dry_run)
 
     def _check_current(self, dry_run: bool = False, profile=None) -> int:
-        from .checker import CheckStatus
+        from .checker import CheckStatus, check_with_progress
 
         if profile is None:
             profile = self.app.config_manager.get_active_profile()
@@ -150,8 +150,8 @@ class CLIHandler:
         if not profile.artists:
             self.log("No artists tracked!", "error")
             return 1
-        result = self.app.release_checker.check_profile(
-            profile, silent=self.quiet, dry_run=dry_run
+        result = check_with_progress(
+            self.app.release_checker, profile, enabled=not self.quiet, dry_run=dry_run
         )
 
         if result.status in (CheckStatus.SUCCESS, CheckStatus.NO_NEW):
@@ -178,41 +178,20 @@ class CLIHandler:
         return self._check_current(dry_run, profile=profile)
 
     def _check_all(self, dry_run: bool = False) -> int:
-        from .checker import CheckStatus
+        from .checker import CheckStatus, check_profiles_with_progress
 
-        profiles = self.app.config_manager.config.profiles
-        self.log(f"Checking {len(profiles)} profiles")
-
-        total_added = 0
-        failed = 0
-
-        for profile in profiles:
-            self.log(f"\nProfile: {profile.name}")
-            if not profile.playlist_uri or not profile.artists:
-                self.log("  Skipping - not configured", "warning")
-                continue
-
-            result = self.app.release_checker.check_profile(
-                profile, silent=True, dry_run=dry_run
-            )
-            if result.status in (CheckStatus.SUCCESS, CheckStatus.NO_NEW):
-                if result.total_tracks_added > 0:
-                    verb = "Would add" if dry_run else "Added"
-                    self.log(f"  {verb} {result.total_tracks_added} tracks", "success")
-                    total_added += result.total_tracks_added
-                else:
-                    self.log("  No new releases")
-            else:
-                self.log(f"  Failed: {result.error_message}", "error")
-                failed += 1
-
-        print()
-        suffix = "would be added" if dry_run else "added"
-        self.log(f"Total: {total_added} tracks {suffix}", "success")
-        if failed > 0:
-            self.log(f"{failed} profiles failed", "warning")
-            return 1
-        return 0
+        results = check_profiles_with_progress(
+            self.app.release_checker, self.app.config_manager.config.profiles,
+            dry_run=dry_run, enabled=not self.quiet,
+        )
+        failures = [r for r in results if r.status in (CheckStatus.ERROR, CheckStatus.PARTIAL)]
+        if self.quiet:
+            for result in failures:
+                self.log(f'{result.profile_name}: {result.error_message}', 'error')
+            total_added = sum(r.total_tracks_added for r in results)
+            suffix = 'would be added' if dry_run else 'added'
+            self.log(f'Total: {total_added} tracks {suffix}', 'warning' if failures else 'success')
+        return 1 if failures else 0
 
     def cmd_artists(self, args) -> int:
         if args.artists_command == "list":

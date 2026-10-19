@@ -43,8 +43,8 @@ class SpotifyAuthManager:
 
             if RICH_AVAILABLE:
                 from rich.prompt import Prompt
-                client_id = Prompt.ask("Enter your Spotify Client ID")
-                client_secret = Prompt.ask("Enter your Spotify Client Secret")
+                client_id = Prompt.ask("Enter your Spotify Client ID", console=console)
+                client_secret = Prompt.ask("Enter your Spotify Client Secret", console=console)
             else:
                 client_id = input("Enter your Spotify Client ID: ").strip()
                 client_secret = input("Enter your Spotify Client Secret: ").strip()

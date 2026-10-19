@@ -18,6 +18,7 @@ from .constants import (
 from .output import (
     print_activity, print_profile_header, print_profile_counts, print_artist_progress,
     print_check_summary, print_profiles_summary, print_all_check_summary,
+    open_block, data_table, suppress_routine_output,
 )
 from .models import Artist, Profile
 from .api import SpotifyAPI, SpotifyAPIError, ReleaseFetcher, transient_read_error
@@ -28,19 +29,6 @@ from .filters import RemixDetector, ReleaseDateFilter
 
 def _print_section_header(title: str, position: str = "") -> None:
     print_profile_header(title, position)
-
-
-def _aurora_color(position: float) -> str:
-    """Return the shared aurora color for a normalized 0..1 position."""
-    stops = ((95, 135, 215), (56, 189, 248), (30, 215, 96))
-    position = max(0.0, min(1.0, position))
-    if position <= 0.5:
-        start, end, amount = stops[0], stops[1], position * 2
-    else:
-        start, end, amount = stops[1], stops[2], (position - 0.5) * 2
-
-    rgb = tuple(round(a + (b - a) * amount) for a, b in zip(start, end))
-    return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
 
 
 def _print_artist_progress(current: int, total: int, artist_name: str) -> None:
@@ -102,17 +90,14 @@ class ProfileCheckResult:
     def display(self):
         """Display detailed results."""
         if RICH_AVAILABLE:
-            from rich.panel import Panel
-            from rich.table import Table
-
             status_colors = {
-                CheckStatus.SUCCESS: "green",
-                CheckStatus.PARTIAL: "yellow",
-                CheckStatus.NO_NEW: "#22d3ee",
-                CheckStatus.ERROR: "red",
-                CheckStatus.SKIPPED: "dim",
+                CheckStatus.SUCCESS: 'anr.success',
+                CheckStatus.PARTIAL: 'anr.warning',
+                CheckStatus.NO_NEW: 'anr.text',
+                CheckStatus.ERROR: 'anr.error',
+                CheckStatus.SKIPPED: 'anr.secondary',
             }
-            color = status_colors.get(self.status, "white")
+            color = status_colors.get(self.status, 'anr.text')
 
             lines = [
                 f"[bold]Status:[/] [{color}]{self.status.value.upper()}[/]",
@@ -122,25 +107,21 @@ class ProfileCheckResult:
                 f"[bold]Artists with New Releases:[/] {self.artists_with_new}",
                 f"[bold]Total Releases Found:[/] {self.total_releases}",
                 "",
-                f"[bold green]Tracks Added:[/] {self.total_tracks_added}",
-                f"[bold yellow]Tracks Filtered:[/] {self.total_tracks_filtered}",
+                f"[anr.heading]Tracks Added:[/] {self.total_tracks_added}",
+                f"[anr.heading]Tracks Filtered:[/] {self.total_tracks_filtered}",
             ]
 
             if self.error_message:
-                lines.append(f"\n[bold red]Error:[/] {self.error_message}")
+                lines.append(f"\n[anr.error]Error:[/] {self.error_message}")
 
-            panel = console.print(Panel(
-                "\n".join(lines),
-                title=f"[bold]Check Results: {self.profile_name}[/]",
-                border_style="blue" if self.status == CheckStatus.NO_NEW else color
-            ))
+            console.print(open_block(f"[bold]Check Results: {self.profile_name}[/]", "\n".join(lines)))
 
             if self.artist_results and any(r.tracks_added > 0 for r in self.artist_results):
-                table = Table(title="Artist Breakdown", show_header=True, header_style="bold cyan")
-                table.add_column("Artist", style="white")
+                table = data_table(title="Artist Breakdown", show_header=True, header_style='anr.heading')
+                table.add_column("Artist", style='anr.text')
                 table.add_column("Releases", justify="right")
-                table.add_column("Added", justify="right", style="green")
-                table.add_column("Filtered", justify="right", style="yellow")
+                table.add_column("Added", justify="right", style='anr.text')
+                table.add_column("Filtered", justify="right", style='anr.text')
 
                 for result in self.artist_results:
                     if result.tracks_added > 0 or result.releases_found > 0:
@@ -184,9 +165,107 @@ class CheckProgress:
     release_total: int = 0
     tracks_found: int = 0
     message: str = ""
+    tracks_added: int = 0
+    artists_checked: int = 0
+    artists_pending: int = 0
 
 
 ProgressCallback = Callable[[CheckProgress], None]
+
+
+def check_profiles_with_progress(checker, profiles, *, dry_run=False, enabled=True, interactive=False):
+    """Check each profile once while keeping one overview of the whole run."""
+    from .check_display import CheckAllDisplay
+
+    profiles = list(profiles)
+    display = CheckAllDisplay(profiles, console=console, enabled=enabled,
+                              dry_run=dry_run, interactive=interactive)
+    results = []
+    with display:
+        for index, profile in enumerate(profiles):
+            display.start_profile(index)
+            reason = 'No playlist configured' if not profile.playlist_uri else 'No artists' if not profile.artists else ''
+            if reason:
+                result = ProfileCheckResult(profile.name, CheckStatus.SKIPPED, error_message=reason)
+            else:
+                result = checker.check_profile(profile, progress_callback=display.update if enabled else None,
+                                               silent=True, dry_run=dry_run)
+            results.append(result)
+            display.complete_profile(result)
+        display.finish()
+    display.report_issues()
+    return results
+
+
+def check_with_progress(checker, profile: Profile, *, dry_run: bool = False,
+                        enabled: bool = True) -> ProfileCheckResult:
+    """Use the same progress display for interactive and command-line checks."""
+    if not enabled:
+        return checker.check_profile(profile, silent=True, dry_run=dry_run)
+
+    if not RICH_AVAILABLE or not console.is_terminal:
+        def simple_progress(p: CheckProgress):
+            if p.phase == 'artist':
+                print_artist_progress(p.artist_current, p.artist_total, p.artist_name)
+            elif p.message and p.phase != 'done':
+                print_info(p.message)
+
+        return checker.check_profile(profile, progress_callback=simple_progress,
+                                     silent=True, dry_run=dry_run)
+
+    from rich.progress import Progress, BarColumn, TaskProgressColumn
+    from rich.console import Group
+    from rich.constrain import Constrain
+    from rich.text import Text
+
+    class ReleaseProgress(Progress):
+        """Keep the activity, blue progress bar, and counts on separate lines."""
+
+        def get_renderables(self):
+            for task in self.tasks:
+                yield Constrain(Group(
+                    Text(task.description, style='anr.heading'),
+                    self.make_tasks_table([task]),
+                    Text(task.fields.get('status', ''), style='anr.secondary'),
+                ), width=min(68, console.width))
+
+    with ReleaseProgress(
+        BarColumn(bar_width=None, style='anr.rule', complete_style='anr.accent',
+                  finished_style='anr.accent', pulse_style='anr.accent'),
+        TaskProgressColumn(),
+        console=console, expand=True,
+    ) as progress:
+        task = progress.add_task('Preparing check', total=None, status='')
+
+        def update_progress(p: CheckProgress):
+            if p.phase == 'init':
+                progress.update(task, description='Reading playlist', status='')
+            elif p.phase == 'artist':
+                # Artist events arrive before its API work starts.
+                progress.update(task, completed=p.artist_current - 1, total=p.artist_total,
+                                description=f'Checking {p.artist_name}',
+                                status=f'{p.artist_current}/{p.artist_total} artists')
+            elif p.phase == 'retry':
+                progress.update(task, description=f'Retrying {p.artist_name}', status='Pending recovery')
+            elif p.phase in ('adding', 'sorting'):
+                current = progress.tasks[task]
+                progress.update(task, completed=current.total or 0,
+                                description='Adding tracks' if p.phase == 'adding' else 'Sorting playlist',
+                                status=p.message if p.phase == 'adding' else '')
+
+        result = checker.check_profile(profile, progress_callback=update_progress,
+                                       silent=True, dry_run=dry_run)
+        description = 'Check complete'
+        if result.status == CheckStatus.ERROR:
+            description = 'Check failed'
+        elif result.status == CheckStatus.PARTIAL:
+            description = 'Check incomplete'
+        status = f'{result.artists_checked}/{result.total_artists} artists'
+        if result.artists_pending:
+            status += f' · {result.artists_pending} pending'
+        progress.update(task, completed=result.artists_checked,
+                        total=max(result.total_artists, 1), description=description, status=status)
+        return result
 
 
 class ReleaseChecker:
@@ -236,7 +315,8 @@ class ReleaseChecker:
             if not silent:
                 print_activity("Sorting playlist by release date")
             try:
-                sort_result = PlaylistTools(self.api, self.playlist_ops).sorter.sort_by_release_date(profile.playlist_uri)
+                with suppress_routine_output(enabled=silent):
+                    sort_result = PlaylistTools(self.api, self.playlist_ops).sorter.sort_by_release_date(profile.playlist_uri)
                 if not sort_result.success:
                     raise SpotifyAPIError(sort_result.error_message)
                 return True
@@ -489,6 +569,11 @@ class ReleaseChecker:
                             if 'unknown method' not in str(error).lower():
                                 prefetched = {a.uri: {'_exception': error} for a in artists[idx:idx + 4]}
                 scan_artist(artist, prefetched.get(artist.uri))
+                if progress_callback:
+                    progress_callback(CheckProgress(
+                        phase='artist_done', artist_current=idx + 1, artist_total=len(artists),
+                        artist_name=artist.name, artists_checked=idx + 1 - len(failures),
+                        artists_pending=len(failures) + len(blocked)))
 
             # A single failed-item pass, outside the original RPC. Healthy runs
             # incur no waiting. Spotipy already owns its request retries.
@@ -505,13 +590,24 @@ class ReleaseChecker:
                     retry_artists.append((artist, failed_at[artist.uri] + delay))
             if retry_artists and shared_cooldown - time.monotonic() <= 2:
                 ready = max(shared_cooldown, max(ready for _, ready in retry_artists))
+                if progress_callback:
+                    progress_callback(CheckProgress(phase='retry_wait',
+                        message=f'Waiting to retry {len(retry_artists)} artists',
+                        artists_checked=len(artists) - len(failures),
+                        artists_pending=len(failures) + len(blocked)))
                 time.sleep(max(0, ready - time.monotonic()))
                 if not silent:
                     print_activity(f'Retrying {len(retry_artists)} pending artists')
                 for artist, _ in retry_artists:
                     if progress_callback:
-                        progress_callback(CheckProgress(phase='retry', artist_name=artist.name, message=f'Retrying: {artist.name}'))
+                        progress_callback(CheckProgress(phase='retry', artist_name=artist.name,
+                            message=f'Retrying: {artist.name}', artists_checked=len(artists) - len(failures),
+                            artists_pending=len(failures) + len(blocked)))
                     scan_artist(artist)
+                    if progress_callback:
+                        progress_callback(CheckProgress(phase='retry_done', artist_name=artist.name,
+                            artists_checked=len(artists) - len(failures),
+                            artists_pending=len(failures) + len(blocked)))
 
             added = failed = 0
             result.total_tracks_added = len(all_new_tracks) if dry_run else 0
@@ -520,6 +616,8 @@ class ReleaseChecker:
                     progress_callback(CheckProgress(phase='adding', tracks_found=len(all_new_tracks), message=f'Adding {len(all_new_tracks)} tracks to playlist'))
                 added, failed = self.playlist_ops.add_tracks(profile.playlist_uri, all_new_tracks)
                 result.total_tracks_added = added
+                if progress_callback:
+                    progress_callback(CheckProgress(phase='added', tracks_added=added))
                 if failed or added != len(all_new_tracks):
                     result.status = CheckStatus.PARTIAL
                     result.error_message = f'Failed to confirm {len(all_new_tracks) - added} track additions'
@@ -592,7 +690,8 @@ class ReleaseChecker:
                 progress_callback(CheckProgress(
                     phase='done',
                     tracks_found=result.total_tracks_added,
-                    message='Check complete!'
+                    message='Check complete!', tracks_added=result.total_tracks_added,
+                    artists_checked=result.artists_checked, artists_pending=result.artists_pending,
                 ))
 
             notify(result.status.value)
@@ -675,7 +774,7 @@ class InteractiveChecker:
 
         if RICH_AVAILABLE:
             from rich.prompt import Confirm
-            if not Confirm.ask("Start check?", default=True):
+            if not Confirm.ask("Start check?", default=True, console=console):
                 print_warning("Cancelled")
                 return ProfileCheckResult(profile_name=profile.name, status=CheckStatus.SKIPPED)
         else:
@@ -685,74 +784,7 @@ class InteractiveChecker:
 
         print()
 
-        if RICH_AVAILABLE:
-            from rich.progress import (
-                Progress, ProgressColumn, SpinnerColumn, TextColumn,
-                TaskProgressColumn,
-            )
-            from rich.text import Text
-
-            class AuroraBarColumn(ProgressColumn):
-                """A live progress bar using the shared ANR aurora palette."""
-
-                def __init__(self, width: int = 24):
-                    super().__init__()
-                    self.width = width
-
-                def render(self, task):
-                    ratio = 0.0 if task.total is None else task.completed / max(task.total, 1)
-                    ratio = max(0.0, min(1.0, ratio))
-                    filled = round(self.width * ratio)
-                    bar = Text()
-                    for index in range(self.width):
-                        if index < filled:
-                            position = index / max(self.width - 1, 1)
-                            bar.append("━", style=f"bold {_aurora_color(position)}")
-                        else:
-                            bar.append("━", style="bright_black")
-                    return bar
-
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[bold #22d3ee]{task.description}"),
-                AuroraBarColumn(),
-                TaskProgressColumn(),
-                TextColumn("[dim]{task.fields[status]}"),
-                console=console
-            ) as progress:
-                task = progress.add_task(
-                    "Checking releases",
-                    total=len(profile.artists),
-                    status=""
-                )
-
-                def update_progress(p: CheckProgress):
-                    if p.phase == 'artist':
-                        progress.update(
-                            task,
-                            completed=p.artist_current,
-                            total=p.artist_total,
-                            description=f"Checking {p.artist_name}",
-                            status=f"{p.artist_current}/{p.artist_total}"
-                        )
-                    elif p.phase == 'adding':
-                        progress.update(task, description="Adding tracks", status=p.message)
-                    elif p.phase == 'retry':
-                        progress.update(task, description=f'Retrying {p.artist_name}', status='Pending recovery')
-                    elif p.phase == 'sorting':
-                        progress.update(task, description="Sorting playlist", status="")
-
-                result = self.checker.check_profile(profile, update_progress, silent=True)
-        else:
-            def simple_progress(p: CheckProgress):
-                if p.phase == 'artist':
-                    print(f"  [{p.artist_current}/{p.artist_total}] {p.artist_name}")
-                elif p.phase == 'adding':
-                    print(f"  {p.message}")
-                elif p.phase == 'retry':
-                    print(f"  {p.message}")
-
-            result = self.checker.check_profile(profile, simple_progress, silent=True)
+        result = check_with_progress(self.checker, profile)
 
         print()
         result.display()
@@ -770,7 +802,7 @@ class InteractiveChecker:
 
         if RICH_AVAILABLE:
             from rich.prompt import Confirm
-            if not Confirm.ask("Check all profiles?", default=True):
+            if not Confirm.ask("Check all profiles?", default=True, console=console):
                 print_warning("Cancelled")
                 return []
         else:
@@ -778,47 +810,10 @@ class InteractiveChecker:
                 print_warning("Cancelled")
                 return []
 
-        print()
+        if RICH_AVAILABLE and console.is_terminal:
+            console.clear()
+        return check_profiles_with_progress(self.checker, profiles, interactive=True)
 
-        results = []
-        total_added = 0
-
-        for idx, profile in enumerate(profiles):
-            print()
-            _print_section_header(profile.name, f"Profile {idx + 1} of {len(profiles)}")
-
-            if not profile.playlist_uri:
-                print_warning("Skipping - no playlist configured")
-                results.append(ProfileCheckResult(
-                    profile_name=profile.name,
-                    status=CheckStatus.SKIPPED,
-                    error_message="No playlist"
-                ))
-                continue
-
-            if not profile.artists:
-                print_warning("Skipping - no artists")
-                results.append(ProfileCheckResult(
-                    profile_name=profile.name,
-                    status=CheckStatus.SKIPPED,
-                    error_message="No artists"
-                ))
-                continue
-
-            result = self.checker.check_profile(profile, silent=False)
-            results.append(result)
-            total_added += result.total_tracks_added
-
-        print()
-        with_new = sum(1 for r in results if r.total_tracks_added > 0)
-        print_all_check_summary(
-            len(results), with_new, total_added,
-            errors=sum(r.status == CheckStatus.ERROR for r in results),
-            partial=sum(r.status == CheckStatus.PARTIAL for r in results),
-            skipped=sum(r.status == CheckStatus.SKIPPED for r in results),
-        )
-
-        return results
 
 
 class ScheduledChecker:
@@ -889,10 +884,9 @@ class ScheduledChecker:
         now = time.time()
 
         if RICH_AVAILABLE:
-            from rich.table import Table
 
-            table = Table(title="Check Schedule", show_header=True, header_style="bold cyan")
-            table.add_column("Profile", style="white")
+            table = data_table(title="Check Schedule", show_header=True, header_style='anr.heading')
+            table.add_column("Profile", style='anr.text')
             table.add_column("Interval", justify="right")
             table.add_column("Last Check")
             table.add_column("Next Check")
@@ -908,15 +902,15 @@ class ScheduledChecker:
                     next_dt = datetime.fromtimestamp(next_check)
 
                     if next_check <= now or (profile.sort_by_date and profile.pending_sort):
-                        next_str = "[bold red]Due now[/]"
-                        status = "[yellow]●[/]"
+                        next_str = "Due now"
+                        status = "[anr.warning]●[/]"
                     else:
                         next_str = next_dt.strftime("%Y-%m-%d %H:%M")
-                        status = "[green]●[/]"
+                        status = "[anr.success]●[/]"
                 else:
-                    last_str = "[dim]Never[/]"
-                    next_str = "[bold red]Due now[/]"
-                    status = "[yellow]●[/]"
+                    last_str = "[anr.secondary]Never[/]"
+                    next_str = "Due now"
+                    status = "[anr.warning]●[/]"
 
                 if profile.last_scan is not None:
                     next_check = profile.last_scan + profile.check_interval * 3600
@@ -928,15 +922,15 @@ class ScheduledChecker:
                         next_check = min(next_check, min(retry_times))
                     if profile.sort_by_date and profile.pending_sort:
                         next_check = now
-                    next_str = '[bold red]Due now[/]' if next_check <= now else datetime.fromtimestamp(next_check).strftime('%Y-%m-%d %H:%M')
-                    status = f'[yellow]{len(retry_times)} pending[/]' if retry_times else '[green]●[/]'
+                    next_str = 'Due now' if next_check <= now else datetime.fromtimestamp(next_check).strftime('%Y-%m-%d %H:%M')
+                    status = f'[anr.warning]{len(retry_times)} pending[/]' if retry_times else '[anr.success]●[/]'
 
                 if not profile.playlist_uri:
-                    status = "[red]○[/]"
-                    next_str = "[dim]No playlist[/]"
+                    status = "[anr.error]○[/]"
+                    next_str = "[anr.secondary]No playlist[/]"
                 elif not profile.artists:
-                    status = "[red]○[/]"
-                    next_str = "[dim]No artists[/]"
+                    status = "[anr.error]○[/]"
+                    next_str = "[anr.secondary]No artists[/]"
 
                 table.add_row(profile.name, interval_str, last_str, next_str, status)
 

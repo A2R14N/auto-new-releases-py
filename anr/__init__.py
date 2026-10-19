@@ -10,7 +10,7 @@ import socket
 from typing import Optional
 
 # Package version
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 __author__ = "Adrian"
 
 # Public API
@@ -144,7 +144,7 @@ class Application:
         if self.bridge_server.extension_connected:
             self._bridge_mode = True
             self.spotify_api = BridgeAPI(self.bridge_server)
-            print_success("\U0001f3b8 Spicetify bridge active — no OAuth needed")
+            print_success("Spicetify connected")
         else:
             # Bridge not available — fall back to OAuth
             self.bridge_server.stop()

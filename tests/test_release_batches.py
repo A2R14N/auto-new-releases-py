@@ -1,5 +1,7 @@
 import unittest
+from contextlib import redirect_stdout
 from datetime import date
+from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -61,6 +63,63 @@ def make_checker(mode="ok"):
 
 
 class ArtistBatchTests(unittest.TestCase):
+    def test_automatic_sort_respects_silent_output_and_preserves_warnings(self):
+        from anr import constants, output
+
+        for silent in (True, False):
+            with self.subTest(silent=silent):
+                checker, _api, profile, _calls = make_checker()
+                profile.sort_by_date = True
+                events = []
+                captured = StringIO()
+
+                def sort(_uri):
+                    output.print_detail('Fetching release dates')
+                    output.print_activity('Applying sorted order')
+                    output.print_complete('Order saved')
+                    constants.print_warning('Missing album date')
+                    return SimpleNamespace(success=True)
+
+                with patch('anr.tools.PlaylistTools') as tools, \
+                        patch('anr.output.RICH_AVAILABLE', False), \
+                        patch('anr.constants.RICH_AVAILABLE', False), redirect_stdout(captured):
+                    tools.return_value.sorter.sort_by_release_date.side_effect = sort
+                    result = checker.check_profile(profile, silent=silent, progress_callback=events.append)
+                    output.print_detail('Output restored')
+
+                self.assertEqual(CheckStatus.SUCCESS, result.status)
+                self.assertTrue(any(event.phase == 'sorting' for event in events))
+                for message in ('Fetching release dates', 'Applying sorted order', 'Order saved'):
+                    self.assertEqual(not silent, message in captured.getvalue())
+                self.assertIn('Missing album date', captured.getvalue())
+                self.assertIn('Output restored', captured.getvalue())
+
+    def test_failed_sort_restores_output_and_reports_partial_result(self):
+        from anr import output
+
+        checker, _api, profile, _calls = make_checker()
+        profile.sort_by_date = True
+        captured = StringIO()
+        with patch('anr.tools.PlaylistTools') as tools, \
+                patch('anr.output.RICH_AVAILABLE', False), \
+                patch('anr.constants.RICH_AVAILABLE', False), redirect_stdout(captured):
+            tools.return_value.sorter.sort_by_release_date.side_effect = RuntimeError('Write failed')
+            result = checker.check_profile(profile, silent=True)
+            output.print_detail('Output restored')
+        self.assertEqual(CheckStatus.PARTIAL, result.status)
+        self.assertIn('Playlist sort failed: Write failed', captured.getvalue())
+        self.assertIn('Output restored', captured.getvalue())
+
+    def test_progress_reports_finished_artists_and_confirmed_additions(self):
+        checker, _api, profile, _calls = make_checker()
+        events = []
+        result = checker.check_profile(profile, silent=True, progress_callback=events.append)
+        completed = [event for event in events if event.phase == 'artist_done']
+        self.assertEqual(list(range(1, 7)), [event.artist_current for event in completed])
+        self.assertEqual(6, completed[-1].artists_checked)
+        self.assertEqual(7, next(event.tracks_added for event in events if event.phase == 'added'))
+        self.assertEqual(result.total_tracks_added, events[-1].tracks_added)
+
     def test_batch_preserves_artist_order_and_duplicate_filtering(self):
         checker, api, profile, calls = make_checker()
         progress = []

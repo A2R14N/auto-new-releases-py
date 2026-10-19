@@ -12,6 +12,7 @@ from typing import Optional, List, Dict, Set, Tuple, Callable
 
 import spotipy
 
+from .output import open_block, data_table
 from .constants import (
     CONFIG_DIR, API_LIMITS,
     RICH_AVAILABLE, console, atomic_write_json,
@@ -602,7 +603,6 @@ class PlaylistOperations:
         name = details.get('name', 'Unknown') if details else 'Unknown'
 
         if RICH_AVAILABLE:
-            from rich.panel import Panel
             lines = [
                 f"[bold]Tracks:[/] {stats['total_tracks']}",
                 f"[bold]Duration:[/] {stats['total_duration_formatted']}",
@@ -613,11 +613,7 @@ class PlaylistOperations:
                 f"[bold]Exact Duplicates:[/] {stats['exact_duplicates']}",
                 f"[bold]Similar Tracks:[/] {stats['similar_duplicates']}",
             ]
-            panel = Panel(
-                "\n".join(lines),
-                title=f"[bold cyan]Playlist: {name}[/]",
-                border_style="cyan"
-            )
+            panel = open_block(f"[anr.heading]Playlist: {name}[/]", "\n".join(lines))
             console.print(panel)
         else:
             print(f"\n=== Playlist: {name} ===")
@@ -655,12 +651,11 @@ class PlaylistSelector:
             return
 
         if RICH_AVAILABLE:
-            from rich.table import Table
-            table = Table(title="Your Playlists", show_header=True, header_style="bold cyan")
-            table.add_column("#", style="dim", width=4)
-            table.add_column("Name", style="white")
+            table = data_table(title="Your Playlists", show_header=True, header_style='anr.heading')
+            table.add_column("#", style='anr.shortcut', width=4)
+            table.add_column("Name", style='anr.text')
             table.add_column("Tracks", justify="right")
-            table.add_column("URI", style="dim")
+            table.add_column("URI", style='anr.secondary')
 
             for idx, playlist in enumerate(playlists, 1):
                 table.add_row(
@@ -701,7 +696,7 @@ class PlaylistSelector:
         try:
             if RICH_AVAILABLE:
                 from rich.prompt import Prompt
-                choice = Prompt.ask(prompt_message)
+                choice = Prompt.ask(prompt_message, console=console)
             else:
                 choice = input(f"{prompt_message}: ").strip()
 
@@ -731,7 +726,8 @@ class PlaylistSelector:
             from rich.prompt import Prompt
             uri = Prompt.ask(
                 "Enter playlist URL or URI",
-                default=initial_value
+                default=initial_value,
+                console=console,
             ) if not initial_value else initial_value
         else:
             uri = initial_value or input("Enter playlist URL or URI: ").strip()
@@ -897,7 +893,8 @@ class PlaylistRestorer:
             choice = Prompt.ask(
                 "What would you like to do?",
                 choices=["restore", "discard", "ignore"],
-                default="restore"
+                default="restore",
+                console=console,
             )
         else:
             print("Options: [r]estore, [d]iscard, [i]gnore")

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional, List, Dict, Set, Tuple, Callable
 
+from .output import data_table
 from .constants import (
     REMIX_KEYWORDS, RICH_AVAILABLE, console,
     print_success, parse_release_date,
@@ -100,14 +101,13 @@ class FilterStats:
     def display(self):
         """Display filter statistics."""
         if RICH_AVAILABLE:
-            from rich.table import Table
-            table = Table(title="Filter Statistics", show_header=True, header_style="bold cyan")
-            table.add_column("Category", style="white")
+            table = data_table(title="Filter Statistics", show_header=True, header_style='anr.heading')
+            table.add_column("Category", style='anr.text')
             table.add_column("Count", justify="right")
 
             table.add_row("Total Input", str(self.total_input))
-            table.add_row("[green]Passed[/]", f"[green]{self.passed}[/]")
-            table.add_row("[red]Total Filtered[/]", f"[red]{self.total_filtered}[/]")
+            table.add_row("[anr.success]Passed[/]", f"[anr.success]{self.passed}[/]")
+            table.add_row("[anr.error]Total Filtered[/]", f"[anr.error]{self.total_filtered}[/]")
             table.add_row("", "")
             table.add_row("  Duplicates", str(self.filtered_duplicates))
             table.add_row("  Remixes/Variants", str(self.filtered_remixes))
@@ -239,13 +239,16 @@ class DuplicateDetector:
         similar = [d for d in duplicates if d.match_type == 'similar']
 
         if RICH_AVAILABLE:
-            from rich.table import Table
             if exact:
-                table = Table(title=f"Exact Duplicates ({len(exact)})", show_header=True, header_style="bold red")
-                table.add_column("#", style="dim", width=4)
-                table.add_column("Track", style="white")
+                table = data_table(
+                    title=f"Exact Duplicates ({len(exact)})",
+                    show_header=True,
+                    header_style='anr.heading',
+                )
+                table.add_column("#", style='anr.secondary', width=4)
+                table.add_column("Track", style='anr.text')
                 table.add_column("Artist")
-                table.add_column("Positions", style="dim")
+                table.add_column("Positions", style='anr.secondary')
 
                 for idx, dup in enumerate(exact[:20], 1):
                     table.add_row(
@@ -261,11 +264,15 @@ class DuplicateDetector:
                 console.print(table)
 
             if similar:
-                table = Table(title=f"Similar Duplicates ({len(similar)})", show_header=True, header_style="bold yellow")
-                table.add_column("#", style="dim", width=4)
-                table.add_column("Track", style="white")
+                table = data_table(
+                    title=f"Similar Duplicates ({len(similar)})",
+                    show_header=True,
+                    header_style='anr.heading',
+                )
+                table.add_column("#", style='anr.secondary', width=4)
+                table.add_column("Track", style='anr.text')
                 table.add_column("Artist")
-                table.add_column("Positions", style="dim")
+                table.add_column("Positions", style='anr.secondary')
 
                 for idx, dup in enumerate(similar[:20], 1):
                     table.add_row(

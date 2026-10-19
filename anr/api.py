@@ -12,6 +12,7 @@ from typing import Optional, List, Dict, Any, Callable
 import spotipy
 from spotipy.exceptions import SpotifyException
 
+from .output import data_table
 from .constants import (
     API_LIMITS, RICH_AVAILABLE, console,
     print_info, print_error, print_warning,
@@ -636,12 +637,11 @@ class ArtistSearcher:
     def _display_search_results(self, artists: List[Dict]):
         """Display search results in a formatted list."""
         if RICH_AVAILABLE:
-            from rich.table import Table
-            table = Table(show_header=True, header_style="bold cyan")
-            table.add_column("#", style="dim", width=3)
-            table.add_column("Name", style="white")
+            table = data_table(show_header=True, header_style='anr.heading')
+            table.add_column("#", style='anr.shortcut', width=3)
+            table.add_column("Name", style='anr.text')
             table.add_column("Followers", justify="right")
-            table.add_column("Genres", style="dim")
+            table.add_column("Genres", style='anr.secondary')
 
             for idx, artist in enumerate(artists, 1):
                 follower_count = artist.get('followers', {}).get('total')
@@ -674,7 +674,8 @@ class ArtistSearcher:
                 from rich.prompt import IntPrompt
                 choice = IntPrompt.ask(
                     f"Select artist (1-{len(artists)}, 0 to cancel)",
-                    default=0
+                    default=0,
+                    console=console,
                 )
             else:
                 choice = int(input(f"Select artist (1-{len(artists)}, 0 to cancel): ") or "0")
@@ -696,7 +697,7 @@ class ArtistSearcher:
         while True:
             if RICH_AVAILABLE:
                 from rich.prompt import Prompt, Confirm
-                query = Prompt.ask("\nEnter artist name to search (or 'q' to quit)")
+                query = Prompt.ask("\nEnter artist name to search (or 'q' to quit)", console=console)
             else:
                 query = input("\nEnter artist name to search (or 'q' to quit): ").strip()
 
@@ -712,7 +713,7 @@ class ArtistSearcher:
 
                 if RICH_AVAILABLE:
                     from rich.prompt import Confirm
-                    if not Confirm.ask("Search again?", default=True):
+                    if not Confirm.ask("Search again?", default=True, console=console):
                         return None
                 else:
                     if input("Search again? [Y/n]: ").lower() == 'n':
@@ -786,11 +787,10 @@ class ReleaseFetcher:
             return
 
         if RICH_AVAILABLE:
-            from rich.table import Table
-            table = Table(title=title, show_header=True, header_style="bold cyan")
-            table.add_column("#", style="dim", width=3)
-            table.add_column("Name", style="white")
-            table.add_column("Type", style="dim")
+            table = data_table(title=title, show_header=True, header_style='anr.heading')
+            table.add_column("#", style='anr.shortcut', width=3)
+            table.add_column("Name", style='anr.text')
+            table.add_column("Type", style='anr.secondary')
             table.add_column("Tracks", justify="right")
             table.add_column("Release Date")
 
@@ -829,10 +829,10 @@ class ProgressDisplay:
             from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
             self._progress = Progress(
                 SpinnerColumn(),
-                TextColumn("[bold #22d3ee]{task.description}"),
+                TextColumn("[anr.heading]{task.description}"),
                 BarColumn(),
                 TaskProgressColumn(),
-                TextColumn("[dim]{task.fields[status]}"),
+                TextColumn("[anr.secondary]{task.fields[status]}"),
                 console=console
             )
             self._progress.start()

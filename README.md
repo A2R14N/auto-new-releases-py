@@ -5,7 +5,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Spicetify Compatible](https://img.shields.io/badge/Spicetify-Extension%20Ready-f43f5e.svg?logo=spotify&logoColor=white)](https://spicetify.app/)
-[![Code Style: Rich](https://img.shields.io/badge/CLI-Rich%20Aurora-38bdf8.svg)](https://github.com/Textualize/rich)
+[![Terminal UI: Rich](https://img.shields.io/badge/CLI-Rich-2997ff.svg)](https://github.com/Textualize/rich)
 [![Architecture: Dual--Engine](https://img.shields.io/badge/Engine-Spicetify%20%7C%20Web%20API-1ed760.svg)]()
 
 **An intelligent, terminal-driven Spotify release radar that automatically tracks your favorite artists, filters out unwanted noise, and syncs fresh drops directly into dedicated playlists.**
@@ -60,8 +60,10 @@ ANR monitors your hand-picked artist roster, detects new singles and albums with
   - Faster bridge sorting with grouped moves, verified saved order, and recovery backups per playlist.
   - Exact duplicate removal keeps the original song occurrence and its added date.
   - Deep playlist deduplication and statistical health analyzers.
-- **🎨 Modern Aurora Terminal UI**:
-  - Powered by Rich with animated gradient progress bars, structured dashboards, status tables, and keyboard-driven shortcuts.
+- **🎨 Refined Rich Terminal UI**:
+  - Framed option menus, neutral text, blue shortcuts, and consistent status colors.
+  - One live overview for all-profile checks shows the active profile, scanning, retries, additions, sorting, and confirmed totals.
+  - Responsive profile selection keeps full names together, with stacked details in narrow terminals.
 - **🔔 Optional Spotify Notifications**:
   - Fixed status messages with one global on/off switch for all profiles. Disabled by default.
 - **⏱️ Flexible Background Automation**:
@@ -178,20 +180,35 @@ anr
 ```
 
 ```text
-╭── Auto New Releases  v2.1.0 ─────────────────────────────────────╮
-│ Main Profile                                             ● Ready │
-│ 142 artists · My New Releases                   2026-08-18 12:45 │
-│ ──────────────────────── Actions ─────────────────────────────── │
-│ > 1  Check current profile                                 Ready │
-│   2  Check all profiles                               3 profiles │
-│   3  Manage artists                                  142 tracked │
-│   4  Manage playlist                             My New Releases │
-│   5  Manage profiles                                  3 profiles │
-│   6  Settings                                                    │
-│ ──────────────────────────────────────────────────────────────── │
-│  [S] Schedule     [7] Import / Export     [Q] Quit               │
-╰──────────────────────────────────────────────────────────────────╯
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│  Auto New Releases                                      v2.2.0  │
+│                                                                 │
+│  Main Profile                                          ● Ready  │
+│  142 artists · My New Releases                   Never checked  │
+│                                                                 │
+│  ─────────────────────────────────────────────────────────────  │
+│                                                                 │
+│  Releases                                                       │
+│  [1]    Check current profile                     Main Profile  │
+│  [2]    Check all profiles                          3 profiles  │
+│                                                                 │
+│  Library                                                        │
+│  [3]    Artists                                    142 tracked  │
+│  [4]    Playlist                               My New Releases  │
+│                                                                 │
+│  Preferences                                                    │
+│  [5]    Profiles                                    3 profiles  │
+│  [6]    Settings                                                │
+│                                                                 │
+│  [s] Schedule   [7] Import / Export   [q] Quit                  │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
+
+With Rich installed, `anr check --all` keeps one live panel visible throughout the run.
+The panel shows completed, active, and waiting profiles; only confirmed additions count as added.
+Redirected output uses plain progress lines, and `--quiet` hides routine progress.
 
 ---
 
@@ -377,7 +394,8 @@ auto-new-releases/
 │   ├── auth.py                # OAuth credentials and token management
 │   ├── bridge_api.py          # Spicetify local HTTP bridge adapter
 │   ├── bridge_server.py       # Embedded server handling bridge payloads
-│   ├── checker.py             # Release fetcher, gradient progress, and logic engine
+│   ├── checker.py             # Release checks, retries, and progress events
+│   ├── check_display.py       # Live progress overview for all-profile checks
 │   ├── cli.py                 # Argument parsing & headless command execution
 │   ├── config.py              # Configuration storage & migration manager
 │   ├── constants.py           # Palette colors, defaults, and shared constants
@@ -388,7 +406,9 @@ auto-new-releases/
 │   ├── playlist.py            # Playlist mutate, batch add, and track extraction
 │   ├── profile.py             # Profile lifecycle and switching logic
 │   ├── tools.py               # Playlist dedupe, sorter, and analytics tools
-│   └── ui.py                  # Rich Aurora dashboard and interactive menus
+│   ├── output.py              # Shared output styles and layouts
+│   ├── ui.py                  # Interactive navigation and actions
+│   └── views.py               # Main dashboard, menus, profiles, and settings
 ├── anr-bridge.js              # Spicetify Desktop Client JavaScript extension
 ├── install_bridge.py          # Automated Spicetify extension installer
 ├── setup.py                   # Package setup and entry point definition
@@ -404,10 +424,10 @@ Run the regression suite with the standard library test runner:
 python -m unittest discover -s tests -v
 ```
 
-With Node.js installed, run the bridge sorting tests:
+With Node.js installed, run the bridge sorting and performance tests:
 
 ```bash
-node --test tests/test_bridge_sort.mjs
+node --test tests/test_bridge_sort.mjs tests/test_bridge_performance.mjs
 ```
 
 ---
