@@ -182,7 +182,7 @@ anr
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                                                                 │
-│  Auto New Releases                                      v2.2.0  │
+│  Auto New Releases                                      v2.3.0  │
 │                                                                 │
 │  Main Profile                                          ● Ready  │
 │  142 artists · My New Releases                   Never checked  │

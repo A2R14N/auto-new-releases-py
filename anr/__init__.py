@@ -10,7 +10,7 @@ import socket
 from typing import Optional
 
 # Package version
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 __author__ = "Adrian"
 
 # Public API
