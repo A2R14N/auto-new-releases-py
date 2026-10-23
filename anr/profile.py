@@ -105,6 +105,26 @@ class ProfileManager:
         print_success(f"Switched to profile: {profile.name}")
         return True
 
+    def set_profile_enabled(self, profile_id: str, enabled: bool) -> bool:
+        """Include or exclude a profile from bulk and scheduled release checks."""
+        profile = self.config_manager.get_profile_by_id(profile_id)
+        if not profile:
+            print_error('Profile not found!')
+            return False
+        if profile.enabled == enabled:
+            print_info(f"'{profile.name}' is already {'enabled' if enabled else 'disabled'}")
+            return True
+        previous = profile.enabled
+        profile.enabled = enabled
+        try:
+            self.save()
+        except Exception as error:
+            profile.enabled = previous
+            print_error(f'Could not save profile status: {error}')
+            return False
+        print_success(f"{'Enabled' if enabled else 'Disabled'} '{profile.name}' for all-profile and scheduled checks")
+        return True
+
     def duplicate_profile(self, profile_id: str, new_name: str) -> Optional[Profile]:
         """Duplicate an existing profile."""
         source_profile = self.config_manager.get_profile_by_id(profile_id)
@@ -133,6 +153,7 @@ class ProfileManager:
             limit_songs_per_album=source_profile.limit_songs_per_album,
             max_songs_per_album=source_profile.max_songs_per_album,
             skip_similar_duplicates=source_profile.skip_similar_duplicates,
+            enabled=source_profile.enabled,
         )
 
         self.config.profiles.append(new_profile)
@@ -169,7 +190,8 @@ class ProfileManager:
             table.add_column("Status", justify="center")
 
             for idx, (pid, name, artists, playlist, is_active) in enumerate(profiles, 1):
-                status = "[anr.accent]●[/] Active" if is_active else "[anr.secondary]○[/]"
+                profile = self.config_manager.get_profile_by_id(pid)
+                status = ('Active · ' if is_active else '') + ('Enabled' if profile.enabled else 'Disabled')
                 table.add_row(
                     str(idx),
                     name,
@@ -182,7 +204,8 @@ class ProfileManager:
         else:
             print("\n=== Profiles ===")
             for idx, (pid, name, artists, playlist, is_active) in enumerate(profiles, 1):
-                status = "[ACTIVE]" if is_active else ""
+                profile = self.config_manager.get_profile_by_id(pid)
+                status = ('[ACTIVE] ' if is_active else '') + ('[Enabled]' if profile.enabled else '[Disabled]')
                 print(f"  {idx}. {name} - {artists} artists - {playlist} {status}")
             print()
 
@@ -199,6 +222,7 @@ class ProfileManager:
             details = [
                 f"[bold]Name:[/] {profile.name}",
                 f"[bold]Status:[/] {'[anr.accent]●[/] Active' if is_active else '[anr.secondary]Inactive[/]'}",
+                f"[bold]Bulk & scheduled checks:[/] {'Enabled' if profile.enabled else 'Disabled'}",
                 f"[bold]Artists:[/] {len(profile.artists)}",
                 f"[bold]Playlist:[/] {profile.playlist_name or '[anr.error]Not configured[/]'}",
                 f"[bold]Last Check:[/] {last_check}",
@@ -223,6 +247,7 @@ class ProfileManager:
         else:
             print(f"\n=== Profile: {profile.name} ===")
             print(f"  Status: {'Active' if is_active else 'Inactive'}")
+            print(f"  Bulk & scheduled checks: {'Enabled' if profile.enabled else 'Disabled'}")
             print(f"  Artists: {len(profile.artists)}")
             print(f"  Playlist: {profile.playlist_name or 'Not configured'}")
             print(f"  Last Check: {last_check}")
@@ -320,16 +345,26 @@ class ProfileManager:
 
     def remove_artist_from_profile(self, profile: Profile, artist_uri: str) -> bool:
         """Remove an artist from a profile."""
-        for i, artist in enumerate(profile.artists):
-            if artist.uri == artist_uri:
-                removed = profile.artists.pop(i)
-                profile.pending_artists.pop(artist_uri, None)
-                self.save()
-                print_success(f"Removed '{removed.name}' from tracking")
-                return True
+        return self.remove_artists_from_profile(profile, [artist_uri]) == 1
 
-        print_error("Artist not found in profile")
-        return False
+    def remove_artists_from_profile(self, profile: Profile, artist_uris: List[str]) -> int:
+        """Remove a validated set of artists and their pending recovery in one save."""
+        selected = set(artist_uris)
+        if not selected:
+            return 0
+        if not selected.issubset({artist.uri for artist in profile.artists}):
+            print_error('Artist not found in profile')
+            return 0
+        removed = [artist for artist in profile.artists if artist.uri in selected]
+        profile.artists = [artist for artist in profile.artists if artist.uri not in selected]
+        for uri in selected:
+            profile.pending_artists.pop(uri, None)
+        self.save()
+        if len(removed) == 1:
+            print_success(f"Removed '{removed[0].name}' from tracking")
+        else:
+            print_success(f'Removed {len(removed)} artists from tracking')
+        return len(removed)
 
     def clear_all_artists(self, profile: Profile) -> int:
         """Remove all artists from a profile."""
@@ -530,51 +565,9 @@ class ProfileMenu:
         self.pm.duplicate_profile(profile.id, new_name)
 
     def run_edit_settings(self):
-        """Interactive settings editor for active profile."""
-        profile = self.pm.active_profile
-
-        print_info(f"Editing settings for: {profile.name}")
-        print("Press Enter to keep current value\n")
-
-        profile.check_interval = self.prompt_int(
-            f"Check interval in hours (current: {profile.check_interval})",
-            default=profile.check_interval, min_val=1, max_val=168
-        )
-        profile.days_to_check = self.prompt_int(
-            f"Days to look back, 0=all time (current: {profile.days_to_check})",
-            default=profile.days_to_check, min_val=0, max_val=365
-        )
-        profile.sort_by_date = self.confirm(
-            "Sort playlist by release date after adding?", default=profile.sort_by_date
-        )
-        profile.skip_remixes = self.confirm("Skip remixes and variants?", default=profile.skip_remixes)
-        profile.skip_low_popularity = self.confirm(
-            "Skip low popularity releases?", default=profile.skip_low_popularity
-        )
-        if profile.skip_low_popularity:
-            profile.min_popularity = self.prompt_int(
-                f"Minimum popularity (0-100, current: {profile.min_popularity})",
-                default=profile.min_popularity, min_val=0, max_val=100
-            )
-        profile.skip_long_albums = self.confirm(
-            "Skip albums with too many tracks?", default=profile.skip_long_albums
-        )
-        if profile.skip_long_albums:
-            profile.max_songs = self.prompt_int(
-                f"Maximum tracks per album (current: {profile.max_songs})",
-                default=profile.max_songs, min_val=1, max_val=200
-            )
-        profile.limit_songs_per_album = self.confirm(
-            "Limit songs added per album?", default=profile.limit_songs_per_album
-        )
-        if profile.limit_songs_per_album:
-            profile.max_songs_per_album = self.prompt_int(
-                f"Max songs per album (current: {profile.max_songs_per_album})",
-                default=profile.max_songs_per_album, min_val=1, max_val=50
-            )
-
-        self.pm.save()
-        print_success("Settings saved!")
+        """Use the same Direct settings editor for every interactive entry point."""
+        from .ui import ApplicationUI
+        ApplicationUI(self.pm.config_manager, self.pm)._menu_settings()
 
     def run_reset_tracked(self):
         """Interactive reset of tracked releases."""

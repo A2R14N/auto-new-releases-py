@@ -62,6 +62,7 @@ class Profile:
     limit_songs_per_album: bool = False
     max_songs_per_album: int = DEFAULT_VALUES["MAX_SONGS_PER_ALBUM"]
     skip_similar_duplicates: bool = False
+    enabled: bool = True
 
     def to_dict(self) -> Dict:
         data = asdict(self)
@@ -111,7 +112,7 @@ class Profile:
             'last_check', 'last_scan', 'pending_artists', 'tracked_releases', 'tracked_tracks', 'days_to_check',
             'sort_by_date', 'pending_sort', 'skip_remixes', 'skip_low_popularity', 'min_popularity',
             'skip_long_albums', 'max_songs', 'limit_songs_per_album',
-            'max_songs_per_album', 'skip_similar_duplicates'
+            'max_songs_per_album', 'skip_similar_duplicates', 'enabled'
         }
         filtered = {k: v for k, v in normalized.items() if k in valid_fields}
         return cls(artists=artists, **filtered)

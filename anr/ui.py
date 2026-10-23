@@ -3,6 +3,7 @@ Simplified terminal user interface — flat menus, inline prompts, no builder/ha
 """
 
 import os
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -14,7 +15,9 @@ from .constants import (
 from .config import ConfigManager
 from .profile import ProfileManager, ProfileMenu
 from .views import (display_main_dashboard, display_profiles_dashboard,
-                    display_menu as _print_menu, display_settings)
+                    display_menu as _print_menu, display_settings,
+                    display_setting_editor, display_tracking_history)
+from .settings import SETTING_BY_KEY
 
 # Standalone helpers
 def display_header():
@@ -69,6 +72,24 @@ def _confirm(message: str, default: bool = False) -> bool:
     suffix = " [Y/n]: " if default else " [y/N]: "
     result = input(message + suffix).strip().lower()
     return result in ('y', 'yes') if result else default
+
+
+def _parse_artist_selection(value: str, artist_count: int) -> list:
+    """Resolve displayed numbers and inclusive ranges before changing the list."""
+    value = value.strip()
+    if not value or value == '0':
+        return []
+    indices = set()
+    for part in value.split(','):
+        match = re.fullmatch(r'\s*([0-9]+)\s*(?:-\s*([0-9]+)\s*)?', part)
+        if not match:
+            raise ValueError('Use numbers or ranges, for example 1,2,3 or 1-5, 7-9.')
+        start = int(match[1])
+        end = int(match[2]) if match[2] is not None else start
+        if not 1 <= start <= end <= artist_count:
+            raise ValueError(f'Choose numbers from 1 to {artist_count}, with ranges in ascending order; use 0 alone to cancel.')
+        indices.update(range(start, end + 1))
+    return sorted(indices)
 
 
 def _wait():
@@ -135,7 +156,7 @@ class ApplicationUI:
         items = [
             ("1", "Check for New Releases",
              "ready" if has_all else "⚠ configure playlist + artists first"),
-            ("2", "Check All Profiles", f"{n_profiles} profiles"),
+            ("2", "Check All Profiles", f"{sum(p.enabled for p in self.config_manager.config.profiles)} enabled"),
             None,
             ("3", "Artists", f"{len(profile.artists)} tracked"),
             ("4", "Playlist", profile.playlist_name or "not set"),
@@ -245,21 +266,29 @@ class ApplicationUI:
     def _remove_artist(self):
         profile = self._profile
         self.profile_manager.display_artists()
-        try:
-            if RICH_AVAILABLE:
-                from rich.prompt import IntPrompt
-                idx = IntPrompt.ask(f"Number to remove (1-{len(profile.artists)}, 0=cancel)", console=console)
-            else:
-                idx = int(input("Number to remove (0=cancel): ") or "0")
-            if idx == 0:
+        while True:
+            selection = _prompt(
+                f"Numbers to remove (1-{len(profile.artists)}; e.g. 1,2,3 or 1-5, 7-9; 0=cancel)",
+                default='0',
+            )
+            try:
+                indices = _parse_artist_selection(selection, len(profile.artists))
+            except ValueError as error:
+                print_error(str(error))
+                continue
+            if not indices:
                 return
-            artist = self.profile_manager.find_artist_by_index(profile, idx)
-            if artist and _confirm(f"Remove '{artist.name}'?"):
-                self.profile_manager.remove_artist_from_profile(profile, artist.uri)
-            elif not artist:
-                print_error("Invalid number")
-        except ValueError:
-            print_error("Invalid input")
+            artists = [profile.artists[index - 1] for index in indices]
+            if len(artists) == 1:
+                confirmation = f"Remove '{artists[0].name}'?"
+            else:
+                print_info('Selected artists:')
+                for index, artist in zip(indices, artists):
+                    print_info(f'  [{index}] {artist.name}')
+                confirmation = f'Remove these {len(artists)} artists from tracking?'
+            if _confirm(confirmation):
+                self.profile_manager.remove_artists_from_profile(profile, [artist.uri for artist in artists])
+            return
 
     def _refresh_artists(self):
         app = self._app
@@ -457,134 +486,161 @@ class ApplicationUI:
     def _menu_profiles(self):
         while True:
             profiles = self.config_manager.config.profiles
+            active = self._profile
             clear_screen()
             display_profiles_dashboard(self.config_manager)
             choice = _choice("Profile ›  number to switch")
 
             if choice == "0":
                 break
-            elif choice.isdigit() and 1 <= int(choice) <= len(profiles):
+            elif choice in {str(index) for index in range(1, len(profiles) + 1)}:
                 self.profile_manager.switch_profile(profiles[int(choice) - 1].id)
             elif choice == "n":
                 name = _prompt("New profile name")
                 if name:
                     self.profile_manager.create_profile(name)
+            elif choice == 'e':
+                self.profile_manager.set_profile_enabled(active.id, not active.enabled)
             elif choice in ("r", "d", "x"):
-                action = {"r": "rename", "d": "duplicate", "x": "delete"}[choice]
-                target = self._select_profile_for_action(profiles, action)
-                if not target:
-                    continue
                 if choice == "r":
-                    new_name = _prompt("New name", default=target.name)
-                    if new_name and new_name != target.name:
-                        self.profile_manager.rename_profile(target.id, new_name)
+                    new_name = _prompt("New name", default=active.name)
+                    if new_name and new_name != active.name:
+                        self.profile_manager.rename_profile(active.id, new_name)
                 elif choice == "d":
-                    new_name = _prompt("Name for copy", default=f"{target.name} (Copy)")
+                    new_name = _prompt("Name for copy", default=f"{active.name} (Copy)")
                     if new_name:
-                        self.profile_manager.duplicate_profile(target.id, new_name)
+                        self.profile_manager.duplicate_profile(active.id, new_name)
                 elif len(profiles) <= 1:
                     print_warning("Cannot delete the only profile")
-                elif _confirm(f"Delete '{target.name}'?"):
-                    self.profile_manager.delete_profile(target.id)
+                elif _confirm(f"Delete '{active.name}'?"):
+                    self.profile_manager.delete_profile(active.id)
             else:
-                print_warning("Enter a profile number or N, R, D, X, 0")
-
-    def _select_profile_for_action(self, profiles, action: str):
-        """Select from the profile list already visible without printing it again."""
-        choice = _choice(f"Profile to {action}  1-{len(profiles)} · 0 cancel")
-        if choice == "0":
-            return None
-        if choice.isdigit() and 1 <= int(choice) <= len(profiles):
-            return profiles[int(choice) - 1]
-        print_warning("Invalid profile number")
-        return None
+                print_warning("Enter a profile number or N, R, D, X, E, 0")
 
     # ── settings ─────────────────────────────────────────
 
     def _menu_settings(self):
-        """Compact inline settings toggle — no numbered items, just type a letter."""
-        clear_screen()
+        """One visible control per preference, with focused editors."""
+        feedback = None
         while True:
-            profile = self._profile
-            self._display_settings_table(profile)
-
-            raw = _choice("Command ›  letter to change · 0 to go back")
-
+            clear_screen()
+            self._display_settings_table(self._profile)
+            if feedback:
+                (print_error if feedback[1] == 'error' else print_success)(feedback[0])
+            raw = _choice('Command ›  number to change · h history · 0 back')
             if raw in ("", "0"):
                 break
-            elif raw == "i":
-                self._change_int_setting("check_interval", "Check interval (hours)", 1, 168)
-            elif raw == "d":
-                self._change_int_setting("days_to_check", "Days to check (0 = all time)", 0, 365)
-            elif raw == "s":
-                self._toggle("sort_by_date", "Sort by date")
-            elif raw == "r":
-                self._toggle("skip_remixes", "Skip remixes")
-            elif raw == "p":
-                self._toggle("skip_low_popularity", "Skip low popularity")
-            elif raw == "a":
-                self._toggle("skip_long_albums", "Skip long albums")
-            elif raw == "l":
-                self._toggle("limit_songs_per_album", "Limit songs per album")
-            elif raw == "m":
-                self._change_int_setting("min_popularity", "Min popularity (0-100)", 0, 100)
-            elif raw == "x":
-                self._change_int_setting("max_songs_per_album", "Max songs per album", 1, 50)
-            elif raw == "u":
-                self._toggle("skip_similar_duplicates", "Skip similar duplicates")
-            elif raw == "n":
-                self._toggle_notifications()
-            elif raw == "reset":
-                self._reset_tracking()
+            if raw in SETTING_BY_KEY:
+                feedback = self._edit_setting(SETTING_BY_KEY[raw])
+            elif raw == 'h':
+                self._settings_history()
+                feedback = None
             else:
-                print_warning("Unknown key — see table above")
+                feedback = ('Choose a setting from 1 to 9, h for history, or 0 to go back.', 'error')
 
     def _display_settings_table(self, profile):
         display_settings(profile, self.config_manager.config.spotify_notifications)
 
-    def _toggle_notifications(self):
+    def _edit_setting(self, setting):
+        error = ''
+        while True:
+            clear_screen()
+            display_setting_editor(setting, self._profile, self.config_manager.config)
+            if error:
+                print_error(error)
+            choice = _choice('Command ›')
+            if choice in ('', '0'):
+                return None
+            if choice == 'c' and setting.minimum is not None:
+                value = self._custom_setting_value(setting)
+                if value is None:
+                    error = ''
+                    continue
+            elif choice in {str(index) for index in range(1, len(setting.options) + 1)}:
+                value = setting.options[int(choice) - 1][0]
+            else:
+                error = 'Choose one of the keys shown above.'
+                continue
+            return self._save_setting(setting, value)
+
+    def _custom_setting_value(self, setting):
+        error = ''
+        while True:
+            clear_screen()
+            display_setting_editor(setting, self._profile, self.config_manager.config, custom=True)
+            if error:
+                print_error(error)
+            try:
+                raw = _prompt(setting.custom_label).strip()
+            except (KeyboardInterrupt, EOFError):
+                return None
+            if not raw or raw.lower() in ('b', 'back'):
+                return None
+            try:
+                value = int(raw)
+                if setting.minimum <= value <= setting.maximum:
+                    return value
+            except ValueError:
+                pass
+            error = f'Enter a whole number from {setting.minimum} to {setting.maximum}, or b to go back.'
+
+    def _save_setting(self, setting, value):
+        profile = self._profile
         config = self.config_manager.config
-        config.spotify_notifications = not config.spotify_notifications
-        self.config_manager.save()
-        print_success(f"Spotify notifications (all profiles): {'On' if config.spotify_notifications else 'Off'}")
-
-    def _toggle(self, attr: str, label: str):
-        profile = self._profile
-        current = getattr(profile, attr, False)
-        setattr(profile, attr, not current)
-        self.config_manager.save()
-        val = "Yes" if not current else "No"
-        print_success(f"{label}: {val}")
-
-    def _change_int_setting(self, attr: str, label: str, lo: int, hi: int):
-        profile = self._profile
-        current = getattr(profile, attr, 0)
+        owner = config if setting.global_setting else profile
+        fields = [setting.field] + ([setting.flag] if setting.flag else [])
+        original = {field: getattr(owner, field) for field in fields}
         try:
-            if RICH_AVAILABLE:
-                from rich.prompt import IntPrompt
-                val = IntPrompt.ask(label, default=current, console=console)
-            else:
-                val = int(input(f"{label} [{current}]: ") or str(current))
-            if lo <= val <= hi:
-                setattr(profile, attr, val)
+            if setting.apply(profile, config, value):
                 self.config_manager.save()
-                print_success(f"{label}: {val}")
+        except Exception as error:
+            for field, old_value in original.items():
+                setattr(owner, field, old_value)
+            return (f'Could not save settings: {error}', 'error')
+        return (f'{setting.label}: {setting.format(setting.current(profile, config))}', 'success')
+
+    def _settings_history(self):
+        feedback = ''
+        while True:
+            clear_screen()
+            display_tracking_history(self._profile)
+            if feedback:
+                (print_error if feedback.startswith('Could not clear') else print_info)(feedback)
+            choice = _choice('Command ›')
+            if choice in ('', '0'):
+                return
+            if choice == 'c':
+                feedback = self._reset_tracking()
             else:
-                print_error(f"Value must be {lo}–{hi}")
-        except ValueError:
-            print_error("Invalid number")
+                feedback = 'Choose c to clear history, or 0 to go back.'
 
     def _reset_tracking(self):
         profile = self._profile
-        release_count = len(profile.tracked_releases)
-        track_count = len(getattr(profile, "tracked_tracks", {}))
-        if release_count == 0 and track_count == 0:
-            print_info("Nothing to reset")
-            return
-        print_warning(f"Will reset {release_count} releases and {track_count} tracks. "
-                      f"All songs will be re-scanned on next check!")
-        if _confirm("Reset all tracking?"):
-            self.profile_manager.reset_tracked_releases(profile, mode="all")
+        if not (profile.tracked_releases or profile.tracked_tracks or profile.pending_artists):
+            return 'No tracking history to clear.'
+        error = ''
+        while True:
+            clear_screen()
+            display_tracking_history(profile, confirm=True)
+            if error:
+                print_error(error)
+            try:
+                answer = _prompt('Type CLEAR to confirm (Enter to cancel)').strip()
+            except (KeyboardInterrupt, EOFError):
+                return ''
+            if answer in ('', '0'):
+                return ''
+            if answer == 'CLEAR':
+                fields = ('tracked_releases', 'tracked_tracks', 'pending_artists', 'last_scan')
+                original = {field: getattr(profile, field) for field in fields}
+                try:
+                    self.profile_manager.reset_tracked_releases(profile, mode='all')
+                except Exception as error:
+                    for field, value in original.items():
+                        setattr(profile, field, value)
+                    return f'Could not clear tracking history: {error}'
+                return 'Tracking history cleared. Spotify playlist songs were kept.'
+            error = 'Type CLEAR exactly, or press Enter to cancel.'
 
     # ── import / export ──────────────────────────────────
 

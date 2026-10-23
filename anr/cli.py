@@ -88,6 +88,10 @@ Examples:
     profile_create.add_argument("name", type=str, help="Profile name")
     profile_delete = profile_sub.add_parser("delete", help="Delete a profile")
     profile_delete.add_argument("name", type=str, help="Profile name")
+    for command, description in (('enable', 'Include in bulk and scheduled release checks'),
+                                 ('disable', 'Skip in bulk and scheduled release checks')):
+        profile_scan = profile_sub.add_parser(command, help=description)
+        profile_scan.add_argument('name', type=str, help='Profile name')
 
     # export
     export_parser = subparsers.add_parser("export", help="Export profiles")
@@ -369,6 +373,13 @@ class CLIHandler:
         elif args.profile_command == "create":
             self.app.profile_manager.create_profile(args.name)
             return 0
+        elif args.profile_command in ('enable', 'disable'):
+            for profile in self.app.config_manager.config.profiles:
+                if profile.name.lower() == args.name.lower():
+                    return 0 if self.app.profile_manager.set_profile_enabled(
+                        profile.id, args.profile_command == 'enable') else 1
+            self.log(f'Profile not found: {args.name}', 'error')
+            return 1
         elif args.profile_command == "delete":
             for p in self.app.config_manager.config.profiles:
                 if p.name.lower() == args.name.lower():
@@ -376,7 +387,7 @@ class CLIHandler:
             self.log(f"Profile not found: {args.name}", "error")
             return 1
         else:
-            self.log("Use: profile list|show|switch|create|delete")
+            self.log("Use: profile list|show|switch|create|delete|enable|disable")
             return 0
 
     def cmd_export(self, args) -> int:

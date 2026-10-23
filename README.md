@@ -229,6 +229,10 @@ ANR comes with a comprehensive non-interactive CLI for scripting and automation:
 
 ### Artist Management
 
+In the interactive **Artists → Remove Artist** menu, select one number, a comma-separated
+list (`1,2,3`), or inclusive ranges (`1-5, 7-9`). ANR shows the selected artists before
+one confirmation. Overlapping selections count once; enter `0` to cancel.
+
 | Command | Description |
 | :--- | :--- |
 | `anr artists list` | List all tracked artists in the active profile |
@@ -273,6 +277,8 @@ history unchanged instead of treating every album as zero popularity.
 | `anr profile switch "Name"` | Switch the active profile |
 | `anr profile create "Name"` | Create a new tracking profile |
 | `anr profile delete "Name"` | Remove an existing profile |
+| `anr profile disable "Name"` | Exclude a profile from all-profile and scheduled release checks |
+| `anr profile enable "Name"` | Include a profile in all-profile and scheduled release checks again |
 | `anr export -o backup.json` | Export profile configurations and history to JSON |
 | `anr import backup.json` | Import profiles with conflict resolution (`skip`/`replace`/`rename`) |
 | `anr config --show` | Display current local configuration state |
@@ -282,29 +288,62 @@ history unchanged instead of treating every album as zero popularity.
 <a id="configuration"></a>
 ## ⚙️ Configuration & Filtering Engine
 
-Each profile in ANR maintains independent filter rules configured via the settings menu (`anr` -> `6`):
+### Enable or disable profiles
+
+Open **Profiles**, switch to the desired profile by number, then press **[e] Disable**
+or **[e] Enable**. Rename, Duplicate, Delete, and Enable/Disable act on the active profile;
+Delete still asks for confirmation. **[n] New profile** creates a separate profile. Profiles show
+their Enabled/Disabled status separately from which profile is currently active.
+Disabled profiles are omitted from **Check all profiles**, `anr check --all`
+(including dry runs), `anr daemon --once`, and scheduled daemon checks. Their artists,
+history, pending recovery, and other settings are kept. Re-enable one to include it again.
+Existing profiles remain enabled by default.
+
+You can still check a disabled profile explicitly with **Check current profile** or
+`anr check --profile "Name"`. Playlist tools remain available. Enabled/disabled status
+is saved in configuration, included in profile exports, and copied when duplicating a profile.
+
+Open Settings (`anr` → `6`) to see each preference and its effective value. Choose a
+number to open its editor, then select a named choice or **[c] Enter a number**.
+Settings save immediately; **[0] Back** leaves an editor without changing anything.
+In numeric entry, Enter keeps the current value and **b** goes back.
 
 ```text
-╭── Settings  ·  Main Profile ─────────────────────────────────────╮
-│ [i]  Check interval                                           4h │
-│ [d]  Days to check                                        7 days │
-│ [s]  Sort by date                                             On │
-│ [r]  Skip remixes                                             On │
-│ [p]  Skip low popularity                                      On │
-│ [m]  Minimum popularity                                       25 │
-│ [a]  Skip long albums                                        Off │
-│ [l]  Limit per album                                          On │
-│ [x]  Maximum songs per album                                   3 │
-│ [u]  Skip similar tracks                                      On │
-│ [n]  Spotify notifications (global)                          Off │
-│ ──────────────────────────────────────────────────────────────── │
-│ Tracked  284 releases  ·  412 tracks       [reset] Clear history │
-╰──────────────────────────────────────────────────────────────────╯
+[1] Automatic check interval     Every 24 hours
+[2] Release window               Last 30 days
+[3] Playlist order               Newest first
+[4] Remixes & other versions     Include all
+[5] Similar songs                Allow different recordings
+[6] Songs per album              All songs
+[7] Album size                   Any size
+[8] Album popularity             Any score
+[9] Spotify notifications        Off · all profiles
+[h] Tracking history             View / clear
+[0] Back
 ```
+
+The automatic interval applies while `anr daemon` is running; it does not start
+background checking on its own. Each profile keeps its existing settings when updated.
+
+Numeric **0** has an explicit meaning in these editors:
+
+- Release window: **All dates**.
+- Songs per album: **All eligible songs**, with the per-album cap disabled.
+- Album size: **Any size**, with no whole-release size filter.
+- Album popularity: **Any score**, with no minimum-score filter.
+
+Positive values enable the corresponding limit. Album size skips an entire release
+above the threshold; Songs per album selects up to N eligible songs from a release.
+Existing config flags and thresholds are retained; no config migration is required.
+
+Use **[h] Tracking history** to inspect remembered releases, songs, and pending artists.
+Clearing history requires typing **CLEAR** and does not delete songs from Spotify.
+The next check reconsiders releases within the release window. Changes to filters
+do not automatically erase history or reconsider previously handled releases.
 
 ### Global Spotify Notifications
 
-Notifications are **off by default**. Press **N** in Settings to turn them on or off
+Notifications are **off by default**. Open **[9] Spotify notifications** in Settings to choose On or Off
 for **all profiles**. The choice stays the same when you switch profiles and is
 stored in ANR's configuration; profile imports and exports do not change it.
 
@@ -315,10 +354,11 @@ global switch once if you want notifications.
 
 ### Filtering Logic Explained
 
-* **`Skip Remixes` (`skip_remixes`)**: Filters out tracks matching keywords such as `Remix`, `Mix`, `Edit`, `Acoustic`, `Instrumental`, `Live at`, `VIP`, `Dub`, or `Remaster`.
-* **`Skip Similar Tracks` (`skip_similar_duplicates`)**: Generates normalized signatures (`clean_title|||primary_artist`). If a single is already in your playlist or history, subsequent album re-releases of that exact song will not create duplicates.
-* **`Limit per Album` (`limit_songs_per_album` / `max_songs_per_album`)**: Protects your playlist from being hijacked by 25-track LP drops by picking only the top songs per album release.
-* **`Minimum Popularity` (`min_popularity`)**: Rejects tracks with Spotify popularity scores below the set threshold.
+* **Remixes & other versions** (`skip_remixes`): Name-based matching excludes remixes, live recordings, acoustic cuts, remasters, covers, and related versions when enabled. Keyword matches can also exclude songs with those words in their titles.
+* **Similar songs** (`skip_similar_duplicates`): Optional matching by lowercased song title and primary artist excludes matching names even when Spotify track IDs differ. Exact track duplicates are always excluded.
+* **Songs per album** (`limit_songs_per_album` / `max_songs_per_album`): Selects up to N eligible songs per release, ranked by Spotify popularity. Missing ranking data keeps a release pending.
+* **Album size** (`skip_long_albums` / `max_songs`): Skips releases with more tracks than the selected limit.
+* **Album popularity** (`skip_low_popularity` / `min_popularity`): Requires the album's popularity score to meet the threshold. Missing scores keep the release pending.
 
 ---
 

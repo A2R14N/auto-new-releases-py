@@ -177,7 +177,11 @@ def check_profiles_with_progress(checker, profiles, *, dry_run=False, enabled=Tr
     """Check each profile once while keeping one overview of the whole run."""
     from .check_display import CheckAllDisplay
 
-    profiles = list(profiles)
+    profiles = [profile for profile in profiles if profile.enabled]
+    if not profiles:
+        if enabled:
+            print_info('No enabled profiles to check.')
+        return []
     display = CheckAllDisplay(profiles, console=console, enabled=enabled,
                               dry_run=dry_run, interactive=interactive)
     results = []
@@ -711,7 +715,7 @@ class ReleaseChecker:
         silent: bool = False
     ) -> List[ProfileCheckResult]:
         """Check all profiles for new releases."""
-        profiles = self.config_manager.config.profiles
+        profiles = [profile for profile in self.config_manager.config.profiles if profile.enabled]
         results = []
 
         for idx, profile in enumerate(profiles):
@@ -792,10 +796,10 @@ class InteractiveChecker:
 
     def run_check_all(self) -> List[ProfileCheckResult]:
         """Run check on all profiles interactively."""
-        profiles = self.config_manager.config.profiles
+        profiles = [profile for profile in self.config_manager.config.profiles if profile.enabled]
 
         if not profiles:
-            print_error("No profiles configured!")
+            print_info("No enabled profiles to check.")
             return []
 
         print_profiles_summary(profiles)
@@ -834,7 +838,7 @@ class ScheduledChecker:
         now = time.time()
 
         for profile in self.config_manager.config.profiles:
-            if not profile.playlist_uri or not profile.artists:
+            if not profile.enabled or not profile.playlist_uri or not profile.artists:
                 continue
 
             interval_seconds = profile.check_interval * 3600
@@ -932,6 +936,9 @@ class ScheduledChecker:
                     status = "[anr.error]○[/]"
                     next_str = "[anr.secondary]No artists[/]"
 
+                if not profile.enabled:
+                    next_str = '—'
+                    status = '[anr.secondary]Disabled[/]'
                 table.add_row(profile.name, interval_str, last_str, next_str, status)
 
             console.print(table)
@@ -943,7 +950,7 @@ class ScheduledChecker:
                     last_str = last_dt.strftime("%Y-%m-%d %H:%M")
                 else:
                     last_str = "Never"
-                status = "Ready" if profile.playlist_uri and profile.artists else "Not configured"
+                status = 'Disabled' if not profile.enabled else ('Ready' if profile.playlist_uri and profile.artists else 'Not configured')
                 print(f"  {profile.name}:")
                 print(f"    Interval: {profile.check_interval}h")
                 print(f"    Last check: {last_str}")
